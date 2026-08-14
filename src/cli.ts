@@ -13,6 +13,7 @@ import { flushTelemetry } from './telemetry.ts';
 import { isRunningInAgent } from './detect-agent.ts';
 import { runUpdate } from './update.ts';
 import { runUse, parseUseOptions } from './use.ts';
+import { runTui } from './tui.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -81,6 +82,9 @@ function showBanner(): void {
   console.log(
     `  ${DIM}$${RESET} ${TEXT}npx skills find ${DIM}[query]${RESET}         ${DIM}Search for skills${RESET}`
   );
+  console.log(
+    `  ${DIM}$${RESET} ${TEXT}npx skills panel${RESET}                ${DIM}Open the terminal interface${RESET}`
+  );
   console.log();
   console.log(
     `  ${DIM}$${RESET} ${TEXT}npx skills update${RESET}               ${DIM}Update installed skills${RESET}`
@@ -115,6 +119,7 @@ ${BOLD}Manage Skills:${RESET}
   remove [skills]      Remove installed skills
   list, ls             List installed skills
   find [query]         Search for skills interactively
+  panel                Open the full-screen terminal interface
 
 ${BOLD}Find Options:${RESET}
   --owner <owner>        Search only repositories from a GitHub owner
@@ -337,6 +342,9 @@ async function main(): Promise<void> {
       if (!inAgent) showLogo();
       console.log();
       await runFind(restArgs);
+      break;
+    case 'panel':
+      await runTui();
       break;
     case 'init':
       if (!inAgent) showLogo();
