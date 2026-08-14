@@ -20,18 +20,19 @@ import {
 import type { AgentType } from './types.ts';
 
 const RESET = '\x1b[0m';
-const DIM = '\x1b[38;5;245m';
-const TEXT = '\x1b[38;5;252m';
+// Keep the panel on the terminal's default and ANSI palette colors so it
+// follows the user's active terminal theme. Do not add fixed 256/RGB colors.
+const DIM = '\x1b[2m';
+const TEXT = '\x1b[39m';
 const CYAN = '\x1b[36m';
 const GREEN = '\x1b[32m';
 const YELLOW = '\x1b[33m';
-const ORANGE = '\x1b[38;5;208m';
 const RED = '\x1b[31m';
 const BLUE = '\x1b[34m';
 const MAGENTA = '\x1b[35m';
 const BRIGHT_TEXT = '\x1b[97m';
-const SELECTED_BG = '\x1b[48;5;24m';
-const GLOBAL_METRIC_BG = '\x1b[48;5;22m';
+const SELECTED_BG = '\x1b[44m';
+const GLOBAL_METRIC_BG = '\x1b[42m';
 const BOLD = '\x1b[1m';
 
 const ENTER_ALT_SCREEN = '\x1b[?1049h';
@@ -305,8 +306,7 @@ function horizontalRule(width: number): string {
 }
 
 function accentRule(width: number): string {
-  const cyanWidth = Math.ceil(Math.max(0, width) / 2);
-  return `${CYAN}${'━'.repeat(cyanWidth)}${MAGENTA}${'━'.repeat(Math.max(0, width - cyanWidth))}${RESET}`;
+  return `${CYAN}${'━'.repeat(Math.max(0, width))}${RESET}`;
 }
 
 function scopeLabel(scope: TuiScope): string {
@@ -634,7 +634,7 @@ function renderUpdateProgress(state: TuiState, width: number): string[] {
   const progress = state.updateProgress!;
   const ratio = progress.total === 0 ? 0 : Math.min(1, progress.checked / progress.total);
   const filledWidth = Math.round(width * ratio);
-  const bar = `${ORANGE}${'━'.repeat(filledWidth)}${RESET}${DIM}${'─'.repeat(
+  const bar = `${YELLOW}${'━'.repeat(filledWidth)}${RESET}${DIM}${'─'.repeat(
     Math.max(0, width - filledWidth)
   )}${RESET}`;
   const count =

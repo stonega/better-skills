@@ -36,9 +36,9 @@ describe('TUI renderer', () => {
     expect(output).toContain('Overview');
     expect(output).toContain('Project skills');
     expect(output).toContain('frontend-design');
-    expect(output).toContain('\x1b[48;5;24m\x1b[1m\x1b[97m O Overview ');
-    expect(output).toContain('\x1b[48;5;24m\x1b[1m\x1b[97m 1 SKILL ');
-    expect(output).toContain('\x1b[48;5;22m\x1b[1m\x1b[97m 0 SKILLS ');
+    expect(output).toContain('\x1b[44m\x1b[1m\x1b[97m O Overview ');
+    expect(output).toContain('\x1b[44m\x1b[1m\x1b[97m 1 SKILL ');
+    expect(output).toContain('\x1b[42m\x1b[1m\x1b[97m 0 SKILLS ');
     expect(plainOutput).toContain('Available in this workspace');
     expect(plainOutput).toContain('Available in every workspace');
     expect(plainOutput).not.toContain('Scope Project · Skills');
@@ -58,6 +58,43 @@ describe('TUI renderer', () => {
     );
     expect(narrowMenu).toBeDefined();
     expect(narrowLines.filter((line) => line.includes('O Overview'))).toHaveLength(1);
+  });
+
+  it('renders the menu border in one color', () => {
+    const lines = renderTuiFrame(createTuiState(), { columns: 100, rows: 28 });
+
+    expect(lines[1]).toBe(`\x1b[36m${'━'.repeat(100)}\x1b[0m`);
+  });
+
+  it('uses only terminal palette-aware colors throughout the panel', () => {
+    const overview = createTuiState();
+
+    const installed = createTuiState();
+    installed.screen = 'installed';
+    installed.installed = [
+      {
+        name: 'theme-aware',
+        description: 'Uses the terminal palette.',
+        path: '/workspace/.agents/skills/theme-aware',
+        canonicalPath: '/workspace/.agents/skills/theme-aware',
+        scope: 'project',
+        agents: ['codex'],
+      },
+    ];
+
+    const updates = createTuiState();
+    updates.screen = 'updates';
+    updates.updateProgress = { checked: 1, total: 2, current: 'theme-aware' };
+
+    const output = [overview, installed, updates]
+      .flatMap((state) => renderTuiFrame(state, { columns: 100, rows: 28 }))
+      .join('\n');
+
+    expect(output).toContain('\x1b[39m');
+    expect(output).toContain('\x1b[2m');
+    expect(output).toContain('\x1b[44m');
+    expect(output).toContain('\x1b[42m');
+    expect(output).not.toMatch(/\x1b\[(?:38|48);(?:2|5);/);
   });
 
   it('renders installed skill details for the selected scope', () => {
@@ -109,8 +146,8 @@ describe('TUI renderer', () => {
     expect(plainOutput).toContain('Status ○ disabled');
     expect(plainOutput).toContain('Source global-owner/release-notes');
     expect(plainOutput).toContain('f agent filter  Space enable  u update  o source');
-    expect(output).toContain('\x1b[48;5;24m');
-    expect(output).toContain('\x1b[38;5;245m○');
+    expect(output).toContain('\x1b[44m');
+    expect(output).toContain('\x1b[2m○');
   });
 
   it('uses the full available height for the Installed list', () => {
@@ -253,7 +290,7 @@ describe('TUI renderer', () => {
     expect(progressLine).toBeGreaterThanOrEqual(0);
     expect(progressLine).toBeLessThan(contentLine);
     expect(plainLines[progressLine - 1]).toContain('━');
-    expect(output).toContain('\x1b[38;5;208m');
+    expect(output).toContain('\x1b[33m');
   });
 
   it('keeps menu navigation available during a background update check', () => {
@@ -324,7 +361,7 @@ describe('TUI renderer', () => {
     expect(output).toContain('project-skill');
     expect(output).toContain('Source owner/project');
     expect(output).toContain('u update selected  U update all');
-    expect(rendered).toContain('\x1b[48;5;24m');
+    expect(rendered).toContain('\x1b[44m');
   });
 
   it('shows a successful empty result after a completed update check', () => {
