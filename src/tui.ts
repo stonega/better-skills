@@ -34,6 +34,7 @@ const BRIGHT_TEXT = '\x1b[97m';
 const SELECTED_BG = '\x1b[44m';
 const GLOBAL_METRIC_BG = '\x1b[42m';
 const BOLD = '\x1b[1m';
+const INVERSE = '\x1b[7m';
 
 const ENTER_ALT_SCREEN = '\x1b[?1049h';
 const EXIT_ALT_SCREEN = '\x1b[?1049l';
@@ -321,8 +322,8 @@ function renderTopPanel(state: TuiState, width: number): string[] {
   const navigation = NAV_ITEMS.map((item) => {
     const active = state.screen === item.id;
     return active
-      ? `${SELECTED_BG}${BOLD}${BRIGHT_TEXT} ${item.shortcut.toUpperCase()} ${item.label} ${RESET}`
-      : `${DIM}${item.shortcut.toUpperCase()}${RESET} ${item.color}${item.label}${RESET}`;
+      ? `${INVERSE}${BOLD} ${item.label}[${item.shortcut.toUpperCase()}] ${RESET}`
+      : `${item.color}${item.label}${RESET}${DIM}[${item.shortcut.toUpperCase()}]${RESET}`;
   }).join('  ');
 
   return [pad(navigation, width)];
@@ -374,9 +375,9 @@ function renderOverview(state: TuiState, width: number): string[] {
     '●'
   );
   const lines: string[] = OVERVIEW_LOGO_LINES.map((line) =>
-    pad(renderOverviewLogoLine(line), width)
+    pad(` ${renderOverviewLogoLine(line)}`, width)
   );
-  lines.push(pad(`${BOLD}${TEXT}The Open Agent Skills Ecosystem${RESET}`, width), '');
+  lines.push(pad(` ${BOLD}${TEXT}The Open Agent Skills Ecosystem${RESET}`, width), '');
 
   for (let i = 0; i < projectMetric.length; i++) {
     lines.push(`${projectMetric[i]} ${globalMetric[i]}`);
@@ -416,7 +417,7 @@ function renderInstalled(state: TuiState, width: number, height: number): string
     ? agents[state.installedAgentFilter]?.displayName || state.installedAgentFilter
     : 'All agents';
   const filterBadge = state.installedAgentFilter
-    ? `${SELECTED_BG}${BOLD}${BRIGHT_TEXT} ${safe(filterLabel)} ${RESET}`
+    ? `${SELECTED_BG}${BOLD}${TEXT} ${safe(filterLabel)} ${RESET}`
     : ` ${DIM}All agents ${RESET}`;
   const lines: string[] = [
     `${BOLD}${TEXT}Installed skills${RESET} ${DIM}· project + global ·${RESET} ${BLUE}Agent${RESET}${filterBadge}${DIM}· ${skills.length}/${state.installed.length}${RESET}`,
@@ -442,13 +443,11 @@ function renderInstalled(state: TuiState, width: number, height: number): string
       const scopeColor = scope === 'global' ? GREEN : CYAN;
       const suffixWidth = scope.length + 1;
       const marker = skill.disabled ? `${DIM}○${RESET}` : `${GREEN}●${RESET}`;
-      const selectedMarker = skill.disabled
-        ? `${DIM}○${RESET}${SELECTED_BG}${BOLD}${BRIGHT_TEXT}`
-        : `${GREEN}●${RESET}${SELECTED_BG}${BOLD}${BRIGHT_TEXT}`;
+      const nameColor = skill.disabled ? DIM : TEXT;
       listLines.push(
         active
-          ? `${SELECTED_BG}${BOLD}${BRIGHT_TEXT} ▸ ${selectedMarker} ${pad(name, listWidth - 5 - suffixWidth)} ${scopeColor}${scope}${RESET}`
-          : `  ${marker} ${pad(`${skill.disabled ? DIM : TEXT}${name}${RESET}`, listWidth - 4 - suffixWidth)} ${scopeColor}${scope}${RESET}`
+          ? `${SELECTED_BG}${BOLD}  ${marker}${SELECTED_BG}${BOLD} ${nameColor}${pad(name, listWidth - 4 - suffixWidth)}${RESET}${SELECTED_BG}${BOLD} ${scopeColor}${scope}${RESET}`
+          : `  ${marker} ${pad(`${nameColor}${name}${RESET}`, listWidth - 4 - suffixWidth)} ${scopeColor}${scope}${RESET}`
       );
     }
     if (start > 0 || start + maxRows < skills.length) {
@@ -507,9 +506,8 @@ function renderInstalledAgentFilter(state: TuiState, width: number): string[] {
       const active = state.installedAgentFilter === option.agent;
       const focused = state.agentFilterMenuIndex === optionIndex;
       const marker = active ? `${GREEN}●${RESET}` : `${DIM}○${RESET}`;
-      const content = `${focused ? '▸' : ' '} ${active ? '●' : '○'} ${safe(option.label)}`;
       return focused
-        ? `${SELECTED_BG}${BOLD}${BRIGHT_TEXT}${pad(` ${content}`, columnWidth)}${RESET}`
+        ? `${SELECTED_BG}${BOLD}  ${marker}${SELECTED_BG}${BOLD} ${TEXT}${pad(safe(option.label), columnWidth - 4)}${RESET}`
         : `  ${marker} ${TEXT}${pad(safe(option.label), columnWidth - 4)}${RESET}`;
     });
     lines.push(

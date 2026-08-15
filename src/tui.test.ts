@@ -32,11 +32,19 @@ describe('TUI renderer', () => {
     expect(plainOutput).toContain('███████╗██╗  ██╗██╗██╗     ██╗     ███████╗');
     expect(plainOutput).toContain('╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚══════╝');
     expect(plainOutput).toContain('The Open Agent Skills Ecosystem');
+    expect(
+      plainOutput
+        .split('\n')
+        .some((line) => line.startsWith(' ███████╗██╗  ██╗██╗██╗     ██╗     ███████╗'))
+    ).toBe(true);
+    expect(
+      plainOutput.split('\n').some((line) => line.startsWith(' The Open Agent Skills Ecosystem'))
+    ).toBe(true);
     expect(plainOutput).not.toContain('Discover');
     expect(output).toContain('Overview');
     expect(output).toContain('Project skills');
     expect(output).toContain('frontend-design');
-    expect(output).toContain('\x1b[44m\x1b[1m\x1b[97m O Overview ');
+    expect(output).toContain('\x1b[7m\x1b[1m Overview[O] \x1b[0m');
     expect(output).toContain('\x1b[44m\x1b[1m\x1b[97m 1 SKILL ');
     expect(output).toContain('\x1b[42m\x1b[1m\x1b[97m 0 SKILLS ');
     expect(plainOutput).toContain('Available in this workspace');
@@ -45,19 +53,19 @@ describe('TUI renderer', () => {
 
     const lines = renderTuiFrame(state, { columns: 100, rows: 28 }).map(stripTerminalEscapes);
     const navigationLine = lines.findIndex(
-      (line) => line.includes('O Overview') && line.includes('A Agents')
+      (line) => line.includes('Overview[O]') && line.includes('Agents[A]')
     );
     const contentLine = lines.findIndex((line) => line.includes('Project skills'));
     expect(navigationLine).toBeGreaterThanOrEqual(0);
     expect(navigationLine).toBeLessThan(contentLine);
-    expect(lines.filter((line) => line.includes('O Overview'))).toHaveLength(1);
+    expect(lines.filter((line) => line.includes('Overview[O]'))).toHaveLength(1);
 
     const narrowLines = renderTuiFrame(state, { columns: 60, rows: 28 }).map(stripTerminalEscapes);
     const narrowMenu = narrowLines.find(
-      (line) => line.includes('O Overview') && line.includes('A Agents')
+      (line) => line.includes('Overview[O]') && line.includes('Agents[A]')
     );
     expect(narrowMenu).toBeDefined();
-    expect(narrowLines.filter((line) => line.includes('O Overview'))).toHaveLength(1);
+    expect(narrowLines.filter((line) => line.includes('Overview[O]'))).toHaveLength(1);
   });
 
   it('renders the menu border in one color', () => {
@@ -146,7 +154,10 @@ describe('TUI renderer', () => {
     expect(plainOutput).toContain('Status ○ disabled');
     expect(plainOutput).toContain('Source global-owner/release-notes');
     expect(plainOutput).toContain('f agent filter  Space enable  u update  o source');
-    expect(output).toContain('\x1b[44m');
+    expect(output).toContain(
+      '\x1b[44m\x1b[1m  \x1b[2m○\x1b[0m\x1b[44m\x1b[1m \x1b[2mrelease-notes'
+    );
+    expect(plainOutput).not.toContain('▸');
     expect(output).toContain('\x1b[2m○');
   });
 
@@ -224,11 +235,11 @@ describe('TUI renderer', () => {
       },
     ];
 
-    const output = stripTerminalEscapes(
-      renderTuiFrame(state, { columns: 100, rows: 28 }).join('\n')
-    );
+    const rendered = renderTuiFrame(state, { columns: 100, rows: 28 }).join('\n');
+    const output = stripTerminalEscapes(rendered);
 
     expect(output).toContain('Agent Codex · 2/3');
+    expect(rendered).toContain('\x1b[34mAgent\x1b[0m\x1b[44m\x1b[1m\x1b[39m Codex \x1b[0m');
     expect(output).toContain('codex-only');
     expect(output).toContain('shared-skill');
     expect(output).not.toContain('cursor-only');
@@ -241,9 +252,8 @@ describe('TUI renderer', () => {
     state.detectedAgents = ['cursor', 'codex'];
     openAgentFilterMenu(state);
 
-    const output = stripTerminalEscapes(
-      renderTuiFrame(state, { columns: 100, rows: 28 }).join('\n')
-    );
+    const rendered = renderTuiFrame(state, { columns: 100, rows: 28 }).join('\n');
+    const output = stripTerminalEscapes(rendered);
 
     expect(output).toContain('Filter by detected agent');
     expect(output).toContain('2 detected agents');
@@ -251,6 +261,10 @@ describe('TUI renderer', () => {
     expect(output).toContain('Codex');
     expect(output).toContain('Cursor');
     expect(output).toContain('Tab next · Shift+Tab previous · Enter apply · Esc/f close');
+    expect(rendered).toContain(
+      '\x1b[44m\x1b[1m  \x1b[32m●\x1b[0m\x1b[44m\x1b[1m \x1b[39mAll agents'
+    );
+    expect(output).not.toContain('▸');
 
     moveAgentFilterMenu(state, 1);
     expect(applyAgentFilterMenuSelection(state)).toBe('codex');
