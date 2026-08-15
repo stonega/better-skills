@@ -564,7 +564,7 @@ function renderInstalledAgentFilter(state: TuiState, width: number): string[] {
 
   lines.push(
     '',
-    `${CYAN}Tab${RESET} ${DIM}next ·${RESET} ${CYAN}Shift+Tab${RESET} ${DIM}previous ·${RESET} ${GREEN}Enter${RESET} ${DIM}apply · Esc/f close${RESET}`
+    `${CYAN}↑↓ / j k${RESET} ${DIM}select ·${RESET} ${GREEN}Enter${RESET} ${DIM}apply · Esc/f close${RESET}`
   );
   return lines;
 }
@@ -1128,12 +1128,12 @@ export async function runTui(): Promise<void> {
           render();
           return;
         }
-        if (key.name === 'up' || key.name === 'left') {
+        if (key.name === 'up' || key.name === 'left' || key.name === 'k') {
           moveAgentFilterMenu(state, -1);
           render();
           return;
         }
-        if (key.name === 'down' || key.name === 'right') {
+        if (key.name === 'down' || key.name === 'right' || key.name === 'j') {
           moveAgentFilterMenu(state, 1);
           render();
           return;

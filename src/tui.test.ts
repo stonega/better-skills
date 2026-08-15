@@ -293,7 +293,7 @@ describe('TUI renderer', () => {
     expect(output).toContain('f agent filter');
   });
 
-  it('switches the detected-agent filter with a Tab-style picker', () => {
+  it('switches the detected-agent filter with an arrow-key and Vim-key picker', () => {
     const state = createTuiState();
     state.screen = 'installed';
     state.detectedAgents = ['cursor', 'codex'];
@@ -307,7 +307,9 @@ describe('TUI renderer', () => {
     expect(output).toContain('All agents');
     expect(output).toContain('Codex');
     expect(output).toContain('Cursor');
-    expect(output).toContain('Tab next · Shift+Tab previous · Enter apply · Esc/f close');
+    expect(output).toContain('↑↓ / j k select · Enter apply · Esc/f close');
+    expect(output).not.toContain('Tab next');
+    expect(output).not.toContain('Shift+Tab previous');
     expect(rendered).toContain(
       '\x1b[44m\x1b[1m  \x1b[32m●\x1b[0m\x1b[44m\x1b[1m \x1b[39mAll agents'
     );
