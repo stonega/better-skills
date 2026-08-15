@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { SKILLS_LOGO_LINES } from './logo.ts';
 import { stripTerminalEscapes } from './sanitize.ts';
 import {
   applyAgentFilterMenuSelection,
@@ -45,8 +46,8 @@ describe('TUI renderer', () => {
     expect(output).toContain('Project skills');
     expect(output).toContain('frontend-design');
     expect(output).toContain('\x1b[7m\x1b[1m Overview[O] \x1b[0m');
-    expect(output).toContain('\x1b[44m\x1b[1m\x1b[97m 1 SKILL ');
-    expect(output).toContain('\x1b[42m\x1b[1m\x1b[97m 0 SKILLS ');
+    expect(output).toContain('\x1b[44m\x1b[1m\x1b[39m 1 SKILL ');
+    expect(output).toContain('\x1b[42m\x1b[1m\x1b[39m 0 SKILLS ');
     expect(plainOutput).toContain('Available in this workspace');
     expect(plainOutput).toContain('Available in every workspace');
     expect(plainOutput).not.toContain('Scope Project · Skills');
@@ -74,7 +75,7 @@ describe('TUI renderer', () => {
     expect(lines[1]).toBe(`\x1b[36m${'━'.repeat(100)}\x1b[0m`);
   });
 
-  it('uses only terminal palette-aware colors throughout the panel', () => {
+  it('uses the shared logo colors and terminal palette-aware colors elsewhere', () => {
     const overview = createTuiState();
 
     const installed = createTuiState();
@@ -102,13 +103,18 @@ describe('TUI renderer', () => {
     expect(output).toContain('\x1b[2m');
     expect(output).toContain('\x1b[44m');
     expect(output).toContain('\x1b[42m');
-    expect(output).not.toMatch(/\x1b\[(?:38|48);(?:2|5);/);
+    expect(output).toContain('\x1b[38;5;250m');
+
+    const outputWithoutLogo = output
+      .split('\n')
+      .filter((line) => !SKILLS_LOGO_LINES.some((logoLine) => line.includes(logoLine)))
+      .join('\n');
+    expect(outputWithoutLogo).not.toMatch(/\x1b\[(?:38|48);(?:2|5);/);
   });
 
   it('renders installed skill details for the selected scope', () => {
     const state = createTuiState();
     state.screen = 'installed';
-    state.scope = 'global';
     state.installed = [
       {
         name: 'project-helper',
@@ -153,7 +159,8 @@ describe('TUI renderer', () => {
     expect(plainOutput).toMatch(/release-notes\s+global/);
     expect(plainOutput).toContain('Status ○ disabled');
     expect(plainOutput).toContain('Source global-owner/release-notes');
-    expect(plainOutput).toContain('f agent filter  Space enable  u update  o source');
+    expect(plainOutput).toContain('f agent filter  Space enable  o source');
+    expect(plainOutput).not.toContain('u update');
     expect(output).toContain(
       '\x1b[44m\x1b[1m  \x1b[2m○\x1b[0m\x1b[44m\x1b[1m \x1b[2mrelease-notes'
     );
@@ -181,6 +188,45 @@ describe('TUI renderer', () => {
     expect(standard).toContain('skill-14');
     expect(standard).not.toContain('skill-15');
     expect(tall).toContain('skill-20');
+  });
+
+  it('wraps complete Installed detail values instead of truncating them', () => {
+    const state = createTuiState();
+    const description =
+      'This complete description explains every important capability without hiding the final words.';
+    const canonicalPath =
+      '/workspace/.agents/skills/a-complete-skill-directory-name-that-exceeds-the-detail-column';
+    const source =
+      'owner/a-complete-repository-name/tree/main/a-deeply-nested-skill-source-directory';
+    state.screen = 'installed';
+    state.installed = [
+      {
+        name: 'complete-details',
+        description,
+        path: canonicalPath,
+        canonicalPath,
+        scope: 'project',
+        agents: ['codex'],
+      },
+    ];
+    state.lockEntries = {
+      'project:complete-details': {
+        source,
+        sourceType: 'github',
+        scope: 'project',
+      },
+    };
+
+    const detailText = renderTuiFrame(state, { columns: 80, rows: 40 })
+      .map(stripTerminalEscapes)
+      .map((line) => line.split('│')[1] || '')
+      .join('')
+      .replace(/\s+/g, '');
+
+    expect(detailText).toContain(description.replace(/\s+/g, ''));
+    expect(detailText).toContain(canonicalPath);
+    expect(detailText).toContain(source);
+    expect(detailText).not.toContain('…');
   });
 
   it('sanitizes metadata before rendering it to the terminal', () => {
@@ -238,8 +284,9 @@ describe('TUI renderer', () => {
     const rendered = renderTuiFrame(state, { columns: 100, rows: 28 }).join('\n');
     const output = stripTerminalEscapes(rendered);
 
-    expect(output).toContain('Agent Codex · 2/3');
-    expect(rendered).toContain('\x1b[34mAgent\x1b[0m\x1b[44m\x1b[1m\x1b[39m Codex \x1b[0m');
+    expect(output).toContain('project + global · Codex · 2/3');
+    expect(output).not.toContain('Agent Codex');
+    expect(rendered).toContain('\x1b[44m\x1b[1m\x1b[39m Codex \x1b[0m');
     expect(output).toContain('codex-only');
     expect(output).toContain('shared-skill');
     expect(output).not.toContain('cursor-only');
@@ -265,6 +312,14 @@ describe('TUI renderer', () => {
       '\x1b[44m\x1b[1m  \x1b[32m●\x1b[0m\x1b[44m\x1b[1m \x1b[39mAll agents'
     );
     expect(output).not.toContain('▸');
+
+    const lines = rendered.split('\n').map(stripTerminalEscapes);
+    const allAgentsLine = lines.findIndex((line) => line.includes('All agents'));
+    const codexLine = lines.findIndex((line) => line.trim().startsWith('○ Codex'));
+    const cursorLine = lines.findIndex((line) => line.trim().startsWith('○ Cursor'));
+    expect(allAgentsLine).toBeGreaterThanOrEqual(0);
+    expect(codexLine).toBeGreaterThan(allAgentsLine);
+    expect(cursorLine).toBeGreaterThan(codexLine);
 
     moveAgentFilterMenu(state, 1);
     expect(applyAgentFilterMenuSelection(state)).toBe('codex');
@@ -294,17 +349,55 @@ describe('TUI renderer', () => {
     state.loading = 'Checking for skill updates in background…';
     state.updateProgress = { checked: 1, total: 10, current: 'frontend-design' };
 
-    const output = renderTuiFrame(state, { columns: 100, rows: 28 }).join('\n');
-    const plainLines = stripTerminalEscapes(output).split('\n');
-    const progressLine = plainLines.findIndex((line) => line.includes('Checking 1 of 10'));
+    const renderedLines = renderTuiFrame(state, { columns: 100, rows: 28 });
+    const output = renderedLines.join('\n');
+    const plainLines = renderedLines.map(stripTerminalEscapes);
+    const progressLine = plainLines.findIndex((line) =>
+      line.includes('Checking 1 of 10 project and global skills')
+    );
     const contentLine = plainLines.findIndex((line) => line.includes('Available updates'));
 
-    expect(stripTerminalEscapes(output)).toContain('◌ Checking for skill updates in background…');
+    expect(stripTerminalEscapes(output)).toContain(
+      '⠋  Checking 1 of 10 project and global skills… · frontend-design'
+    );
+    expect(stripTerminalEscapes(output).match(/⠋/g)).toHaveLength(1);
+    expect(stripTerminalEscapes(renderedLines.at(-1) || '')).toContain('navigate');
     expect(stripTerminalEscapes(output)).toContain('frontend-design');
     expect(progressLine).toBeGreaterThanOrEqual(0);
-    expect(progressLine).toBeLessThan(contentLine);
-    expect(plainLines[progressLine - 1]).toContain('━');
-    expect(output).toContain('\x1b[33m');
+    expect(progressLine).toBeGreaterThan(contentLine);
+    expect(renderedLines[1]).toBe(
+      `\x1b[33m${'━'.repeat(10)}\x1b[0m\x1b[2m${'─'.repeat(90)}\x1b[0m`
+    );
+  });
+
+  it('renders the update loader in the skill row instead of the footer', () => {
+    const state = createTuiState();
+    state.screen = 'updates';
+    state.loading = 'Updating frontend-design…';
+    state.availableUpdates = [
+      {
+        name: 'frontend-design',
+        scope: 'project',
+        source: 'owner/frontend-design',
+        sourceType: 'github',
+      },
+    ];
+    state.updateSummary = {
+      checkedCount: 1,
+      totalCount: 1,
+      failedCount: 0,
+      skippedCount: 0,
+    };
+    state.updatingSkills = [{ name: 'frontend-design', scope: 'project' }];
+
+    const firstFrame = renderTuiFrame(state, { columns: 80, rows: 24 }).map(stripTerminalEscapes);
+    state.loadingFrame = 2;
+    const laterFrame = renderTuiFrame(state, { columns: 80, rows: 24 }).map(stripTerminalEscapes);
+
+    expect(firstFrame.some((line) => line.includes('◒ frontend-design'))).toBe(true);
+    expect(laterFrame.some((line) => line.includes('◓ frontend-design'))).toBe(true);
+    expect(firstFrame.at(-1)).toContain('navigate');
+    expect(firstFrame.at(-1)).not.toContain('Updating frontend-design');
   });
 
   it('keeps menu navigation available during a background update check', () => {
@@ -314,8 +407,11 @@ describe('TUI renderer', () => {
     expect(conflictsWithBackgroundUpdateCheck(state, { name: 'tab' })).toBe(false);
     expect(conflictsWithBackgroundUpdateCheck(state, { name: 'left' })).toBe(false);
     expect(conflictsWithBackgroundUpdateCheck(state, { name: 'i', shift: true })).toBe(false);
-    expect(conflictsWithBackgroundUpdateCheck(state, { name: 's' })).toBe(true);
+    expect(conflictsWithBackgroundUpdateCheck(state, { name: 's' })).toBe(false);
     expect(conflictsWithBackgroundUpdateCheck(state, { name: 'u' })).toBe(true);
+
+    state.screen = 'installed';
+    expect(conflictsWithBackgroundUpdateCheck(state, { name: 'u' })).toBe(false);
   });
 
   it('keeps the footer visible in a standard 24-row terminal', () => {
@@ -343,7 +439,6 @@ describe('TUI renderer', () => {
   it('renders available updates as a selectable list with selected and all actions', () => {
     const state = createTuiState();
     state.screen = 'updates';
-    state.scope = 'project';
     state.availableUpdates = [
       {
         name: 'alpha-skill',
@@ -352,9 +447,9 @@ describe('TUI renderer', () => {
         sourceType: 'github',
       },
       {
-        name: 'project-skill',
-        scope: 'project',
-        source: 'owner/project',
+        name: 'global-skill',
+        scope: 'global',
+        source: 'owner/global',
         sourceType: 'github',
       },
     ];
@@ -369,13 +464,17 @@ describe('TUI renderer', () => {
     const rendered = renderTuiFrame(state, { columns: 100, rows: 28 }).join('\n');
     const output = stripTerminalEscapes(rendered);
 
-    expect(output).toContain('Available updates · Project · 2 found');
+    expect(output).toContain('Available updates · Project + global · 2 found');
     expect(output).toContain('10 checked · 0 failed · 0 skipped');
     expect(output).toContain('alpha-skill');
-    expect(output).toContain('project-skill');
-    expect(output).toContain('Source owner/project');
+    expect(output).toContain('global-skill');
+    expect(output).toContain('Scope  Global');
+    expect(output).toContain('Source owner/global');
     expect(output).toContain('u update selected  U update all');
-    expect(rendered).toContain('\x1b[44m');
+    expect(output).not.toContain('▸');
+    expect(rendered).toContain(
+      '\x1b[44m\x1b[1m  \x1b[33m↑\x1b[0m\x1b[44m\x1b[1m \x1b[39mglobal-skill'
+    );
   });
 
   it('shows a successful empty result after a completed update check', () => {
@@ -392,7 +491,7 @@ describe('TUI renderer', () => {
       renderTuiFrame(state, { columns: 100, rows: 28 }).join('\n')
     );
 
-    expect(output).toContain('All 10 checked project skills are up to date.');
+    expect(output).toContain('All 10 checked skills are up to date.');
   });
 
   it('shows the detected-agent total and sorts detected agents first', () => {

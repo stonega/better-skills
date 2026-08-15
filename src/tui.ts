@@ -9,6 +9,7 @@ import {
   type InstalledSkill,
 } from './installer.ts';
 import { readLocalLock } from './local-lock.ts';
+import { renderSkillsLogo } from './logo.ts';
 import { sanitizeMetadata, stripTerminalEscapes } from './sanitize.ts';
 import { getAllLockedSkills } from './skill-lock.ts';
 import { readTuiPreferences, writeTuiPreferences } from './tui-preferences.ts';
@@ -35,21 +36,23 @@ const SELECTED_BG = '\x1b[44m';
 const GLOBAL_METRIC_BG = '\x1b[42m';
 const BOLD = '\x1b[1m';
 const INVERSE = '\x1b[7m';
+const CHECKING_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
+const UPDATE_SPINNER_FRAMES = ['◒', '◐', '◓', '◑'] as const;
+const LOADING_SPINNER_DELAY_MS = 80;
+
+function renderCheckingSpinner(frame: number): string {
+  return `${MAGENTA}${BOLD}${CHECKING_SPINNER_FRAMES[frame % CHECKING_SPINNER_FRAMES.length]}${RESET}`;
+}
+
+function renderUpdateSpinner(frame: number): string {
+  return `${MAGENTA}${BOLD}${UPDATE_SPINNER_FRAMES[frame % UPDATE_SPINNER_FRAMES.length]}${RESET}`;
+}
 
 const ENTER_ALT_SCREEN = '\x1b[?1049h';
 const EXIT_ALT_SCREEN = '\x1b[?1049l';
 const CLEAR_SCREEN = '\x1b[2J\x1b[H';
 const HIDE_CURSOR = '\x1b[?25l';
 const SHOW_CURSOR = '\x1b[?25h';
-
-const OVERVIEW_LOGO_LINES = [
-  '███████╗██╗  ██╗██╗██╗     ██╗     ███████╗',
-  '██╔════╝██║ ██╔╝██║██║     ██║     ██╔════╝',
-  '███████╗█████╔╝ ██║██║     ██║     ███████╗',
-  '╚════██║██╔═██╗ ██║██║     ██║     ╚════██║',
-  '███████║██║  ██╗██║███████╗███████╗███████║',
-  '╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚══════╝',
-];
 
 const NAV_ITEMS: Array<{ id: TuiScreen; label: string; shortcut: string; color: string }> = [
   { id: 'overview', label: 'Overview', shortcut: 'o', color: CYAN },
@@ -74,7 +77,6 @@ export interface TuiLockEntry {
 
 export interface TuiState {
   screen: TuiScreen;
-  scope: TuiScope;
   installed: InstalledSkill[];
   installedAgentFilter: AgentType | null;
   agentFilterMenuOpen: boolean;
@@ -85,6 +87,8 @@ export interface TuiState {
   availableUpdates: AvailableSkillUpdate[];
   updateIndex: number;
   loading: string | null;
+  loadingFrame: number;
+  updatingSkills: Array<{ name: string; scope: TuiScope }>;
   updateProgress: SkillUpdateCheckProgress | null;
   updateSummary: {
     checkedCount: number;
@@ -105,7 +109,6 @@ export interface TuiSize {
 export function createTuiState(): TuiState {
   return {
     screen: 'overview',
-    scope: 'project',
     installed: [],
     installedAgentFilter: null,
     agentFilterMenuOpen: false,
@@ -116,6 +119,8 @@ export function createTuiState(): TuiState {
     availableUpdates: [],
     updateIndex: 0,
     loading: null,
+    loadingFrame: 0,
+    updatingSkills: [],
     updateProgress: null,
     updateSummary: null,
     removeConfirmation: null,
@@ -150,10 +155,6 @@ function clampIndexes(state: TuiState): void {
   const installed = getInstalledViewSkills(state);
   state.installedIndex = Math.max(0, Math.min(state.installedIndex, installed.length - 1));
   state.updateIndex = Math.max(0, Math.min(state.updateIndex, state.availableUpdates.length - 1));
-}
-
-function getScopedSkills(state: TuiState): InstalledSkill[] {
-  return state.installed.filter((skill) => skill.scope === state.scope);
 }
 
 function getInstalledViewSkills(state: TuiState): InstalledSkill[] {
@@ -297,9 +298,39 @@ function pad(value: string, width: number): string {
   return clipped + ' '.repeat(Math.max(0, width - visibleWidth(clipped)));
 }
 
-function renderOverviewLogoLine(line: string): string {
-  const shaded = line.replace(/█+/g, `${BOLD}${BRIGHT_TEXT}$&${RESET}${DIM}`);
-  return `${DIM}${shaded}${RESET}`;
+function wrapText(value: string, width: number): string[] {
+  if (width <= 0) return [''];
+  let remaining = value.trim();
+  if (!remaining) return [''];
+
+  const lines: string[] = [];
+  while (Array.from(remaining).length > width) {
+    const characters = Array.from(remaining);
+    const window = characters.slice(0, width + 1);
+    const whitespace = window.lastIndexOf(' ');
+    const breakAt = whitespace > 0 ? whitespace : width;
+    lines.push(characters.slice(0, breakAt).join('').trimEnd());
+    remaining = characters.slice(breakAt).join('').trimStart();
+  }
+  if (remaining) lines.push(remaining);
+  return lines;
+}
+
+function renderDetailField(
+  label: string,
+  value: string,
+  width: number,
+  valueStyle = TEXT
+): string[] {
+  const labelWidth = 7;
+  const valueLines = wrapText(value, Math.max(1, width - labelWidth));
+  return valueLines.map((line, index) => {
+    const prefix =
+      index === 0
+        ? `${DIM}${label}${RESET}${' '.repeat(Math.max(1, labelWidth - label.length))}`
+        : ' '.repeat(labelWidth);
+    return `${prefix}${valueStyle}${line}${RESET}`;
+  });
 }
 
 function horizontalRule(width: number): string {
@@ -308,6 +339,14 @@ function horizontalRule(width: number): string {
 
 function accentRule(width: number): string {
   return `${CYAN}${'━'.repeat(Math.max(0, width))}${RESET}`;
+}
+
+function updateProgressRule(progress: SkillUpdateCheckProgress, width: number): string {
+  const ratio = progress.total === 0 ? 0 : Math.min(1, progress.checked / progress.total);
+  const filledWidth = Math.round(width * ratio);
+  return `${YELLOW}${'━'.repeat(filledWidth)}${RESET}${DIM}${'─'.repeat(
+    Math.max(0, width - filledWidth)
+  )}${RESET}`;
 }
 
 function scopeLabel(scope: TuiScope): string {
@@ -343,7 +382,7 @@ function renderMetric(
   const badge = ` ${value} ${value === 1 ? 'SKILL' : 'SKILLS'} `;
   return [
     `${color}╭─ ${icon} ${BOLD}${BRIGHT_TEXT}${label}${RESET}${color} ${'─'.repeat(Math.max(0, inner - title.length))}╮${RESET}`,
-    `${color}│${RESET}${pad(`  ${background}${BOLD}${BRIGHT_TEXT}${badge}${RESET}`, inner)}${color}│${RESET}`,
+    `${color}│${RESET}${pad(`  ${background}${BOLD}${TEXT}${badge}${RESET}`, inner)}${color}│${RESET}`,
     `${color}│${RESET}${pad(`  ${DIM}${description}${RESET}`, inner)}${color}│${RESET}`,
     `${color}╰${'─'.repeat(inner)}╯${RESET}`,
   ];
@@ -374,9 +413,7 @@ function renderOverview(state: TuiState, width: number): string[] {
     GLOBAL_METRIC_BG,
     '●'
   );
-  const lines: string[] = OVERVIEW_LOGO_LINES.map((line) =>
-    pad(` ${renderOverviewLogoLine(line)}`, width)
-  );
+  const lines: string[] = renderSkillsLogo().map((line) => pad(` ${line}`, width));
   lines.push(pad(` ${BOLD}${TEXT}The Open Agent Skills Ecosystem${RESET}`, width), '');
 
   for (let i = 0; i < projectMetric.length; i++) {
@@ -419,8 +456,11 @@ function renderInstalled(state: TuiState, width: number, height: number): string
   const filterBadge = state.installedAgentFilter
     ? `${SELECTED_BG}${BOLD}${TEXT} ${safe(filterLabel)} ${RESET}`
     : ` ${DIM}All agents ${RESET}`;
+  const filterDisplay = state.installedAgentFilter
+    ? filterBadge
+    : ` ${BLUE}Agent${RESET}${filterBadge}`;
   const lines: string[] = [
-    `${BOLD}${TEXT}Installed skills${RESET} ${DIM}· project + global ·${RESET} ${BLUE}Agent${RESET}${filterBadge}${DIM}· ${skills.length}/${state.installed.length}${RESET}`,
+    `${BOLD}${TEXT}Installed skills${RESET} ${DIM}· project + global ·${RESET}${filterDisplay}${DIM}· ${skills.length}/${state.installed.length}${RESET}`,
     '',
   ];
   const tableRowBudget = Math.max(1, height - 4);
@@ -457,23 +497,35 @@ function renderInstalled(state: TuiState, width: number, height: number): string
     }
   }
 
-  const detailLines: string[] = [
-    `${BOLD}${safe(selected?.name || 'Select a skill')}${RESET}`,
+  const detailLines: string[] = wrapText(safe(selected?.name || 'Select a skill'), detailWidth).map(
+    (line) => `${BOLD}${line}${RESET}`
+  );
+  detailLines.push(
     '',
-    safe(selected?.description || 'Move through the list to inspect an installed skill.'),
-    '',
-  ];
+    ...wrapText(
+      safe(selected?.description || 'Move through the list to inspect an installed skill.'),
+      detailWidth
+    ),
+    ''
+  );
   if (selected) {
     const entry = getLockEntry(state, selected.name, selected.scope);
     detailLines.push(
-      `${DIM}Status${RESET} ${selected.disabled ? `${DIM}○ disabled${RESET}` : `${GREEN}● enabled${RESET}`}`
+      ...renderDetailField(
+        'Status',
+        selected.disabled ? '○ disabled' : '● enabled',
+        detailWidth,
+        selected.disabled ? DIM : GREEN
+      ),
+      ...renderDetailField('Scope', scopeLabel(selected.scope), detailWidth),
+      ...renderDetailField(
+        'Agents',
+        selected.agents.map((a) => agents[a]?.displayName || a).join(', ') || 'not linked',
+        detailWidth
+      ),
+      ...renderDetailField('Path', safe(selected.canonicalPath), detailWidth),
+      ...renderDetailField('Source', safe(entry?.source || 'local'), detailWidth)
     );
-    detailLines.push(`${DIM}Scope${RESET}  ${TEXT}${scopeLabel(selected.scope)}${RESET}`);
-    detailLines.push(
-      `${DIM}Agents${RESET} ${TEXT}${selected.agents.map((a) => agents[a]?.displayName || a).join(', ') || 'not linked'}${RESET}`
-    );
-    detailLines.push(`${DIM}Path${RESET}   ${TEXT}${safe(selected.canonicalPath)}${RESET}`);
-    detailLines.push(`${DIM}Source${RESET} ${TEXT}${safe(entry?.source || 'local')}${RESET}`);
   }
 
   for (let i = 0; i < Math.max(listLines.length, detailLines.length); i++) {
@@ -484,15 +536,14 @@ function renderInstalled(state: TuiState, width: number, height: number): string
   const toggleAction = selected?.disabled ? 'enable' : 'disable';
   lines.push(
     '',
-    `${CYAN}↑↓${RESET} ${DIM}select${RESET}  ${BLUE}f${RESET} ${DIM}agent filter${RESET}  ${YELLOW}Space${RESET} ${DIM}${toggleAction}${RESET}  ${GREEN}u${RESET} ${DIM}update${RESET}  ${MAGENTA}o${RESET} ${DIM}source${RESET}  ${RED}d${RESET} ${DIM}remove${RESET}  ${CYAN}r${RESET} ${DIM}refresh${RESET}`
+    `${CYAN}↑↓${RESET} ${DIM}select${RESET}  ${BLUE}f${RESET} ${DIM}agent filter${RESET}  ${YELLOW}Space${RESET} ${DIM}${toggleAction}${RESET}  ${MAGENTA}o${RESET} ${DIM}source${RESET}  ${RED}d${RESET} ${DIM}remove${RESET}  ${CYAN}r${RESET} ${DIM}refresh${RESET}`
   );
   return lines;
 }
 
 function renderInstalledAgentFilter(state: TuiState, width: number): string[] {
   const options = getDetectedAgentFilterOptions(state);
-  const columnGap = 2;
-  const columnWidth = Math.max(20, Math.floor((width - columnGap) / 2));
+  const columnWidth = Math.max(20, width);
   const detectedCount = options.length - 1;
   const lines = [
     `${BOLD}${TEXT}Filter by detected agent${RESET}`,
@@ -500,18 +551,14 @@ function renderInstalledAgentFilter(state: TuiState, width: number): string[] {
     '',
   ];
 
-  for (let index = 0; index < options.length; index += 2) {
-    const row = options.slice(index, index + 2).map((option, columnIndex) => {
-      const optionIndex = index + columnIndex;
-      const active = state.installedAgentFilter === option.agent;
-      const focused = state.agentFilterMenuIndex === optionIndex;
-      const marker = active ? `${GREEN}●${RESET}` : `${DIM}○${RESET}`;
-      return focused
-        ? `${SELECTED_BG}${BOLD}  ${marker}${SELECTED_BG}${BOLD} ${TEXT}${pad(safe(option.label), columnWidth - 4)}${RESET}`
-        : `  ${marker} ${TEXT}${pad(safe(option.label), columnWidth - 4)}${RESET}`;
-    });
+  for (const [index, option] of options.entries()) {
+    const active = state.installedAgentFilter === option.agent;
+    const focused = state.agentFilterMenuIndex === index;
+    const marker = active ? `${GREEN}●${RESET}` : `${DIM}○${RESET}`;
     lines.push(
-      `${pad(row[0] || '', columnWidth)}${' '.repeat(columnGap)}${pad(row[1] || '', columnWidth)}`
+      focused
+        ? `${SELECTED_BG}${BOLD}  ${marker}${SELECTED_BG}${BOLD} ${TEXT}${pad(safe(option.label), columnWidth - 4)}${RESET}`
+        : `  ${marker} ${TEXT}${pad(safe(option.label), columnWidth - 4)}${RESET}`
     );
   }
 
@@ -525,19 +572,24 @@ function renderInstalledAgentFilter(state: TuiState, width: number): string[] {
 function renderUpdates(state: TuiState, width: number, height: number): string[] {
   const updates = state.availableUpdates;
   const summary = state.updateSummary;
-  const scope = scopeLabel(state.scope);
   const summaryLine = summary
     ? `${summary.checkedCount} checked · ${summary.failedCount} failed · ${summary.skippedCount} skipped`
     : 'Entering this panel checks remote sources without installing anything.';
   const lines = [
-    `${BOLD}${TEXT}Available updates${RESET} ${DIM}· ${scope} · ${updates.length} found${RESET}`,
+    `${BOLD}${TEXT}Available updates${RESET} ${DIM}· Project + global · ${updates.length} found${RESET}`,
     `${DIM}${summaryLine}${RESET}`,
     '',
   ];
 
   if (state.updateProgress) {
+    const progress = state.updateProgress;
+    const count =
+      progress.total === 0
+        ? 'Preparing project and global update check…'
+        : `Checking ${progress.checked} of ${progress.total} project and global skills…`;
+    const current = progress.current ? ` ${DIM}· ${safe(progress.current)}${RESET}` : '';
     lines.push(
-      `${YELLOW}${BOLD}Checking ${scope.toLowerCase()} skills…${RESET}`,
+      `${renderCheckingSpinner(state.loadingFrame)}  ${YELLOW}${BOLD}${count}${RESET}${current}`,
       `${DIM}Available updates will appear here when the check completes.${RESET}`
     );
     return lines;
@@ -550,9 +602,7 @@ function renderUpdates(state: TuiState, width: number, height: number): string[]
 
   if (updates.length === 0) {
     if (summary.totalCount === 0) {
-      lines.push(
-        `${DIM}No automatically checkable ${scope.toLowerCase()} skills were found.${RESET}`
-      );
+      lines.push(`${DIM}No automatically checkable skills were found.${RESET}`);
     } else if (summary.failedCount > 0) {
       lines.push(
         `${YELLOW}No updates found among the successfully checked skills.${RESET}`,
@@ -560,7 +610,7 @@ function renderUpdates(state: TuiState, width: number, height: number): string[]
       );
     } else {
       lines.push(
-        `${GREEN}${BOLD}✓ All ${summary.checkedCount} checked ${scope.toLowerCase()} skills are up to date.${RESET}`
+        `${GREEN}${BOLD}✓ All ${summary.checkedCount} checked skills are up to date.${RESET}`
       );
     }
     if (summary.skippedCount > 0) {
@@ -568,10 +618,7 @@ function renderUpdates(state: TuiState, width: number, height: number): string[]
         `${DIM}${summary.skippedCount} ${summary.skippedCount === 1 ? 'entry was' : 'entries were'} skipped because automatic checking is unavailable.${RESET}`
       );
     }
-    lines.push(
-      '',
-      `${CYAN}r${RESET} ${DIM}check again ·${RESET} ${CYAN}s${RESET} ${DIM}switch scope${RESET}`
-    );
+    lines.push('', `${CYAN}r${RESET} ${DIM}check again${RESET}`);
     return lines;
   }
 
@@ -590,12 +637,16 @@ function renderUpdates(state: TuiState, width: number, height: number): string[]
   for (let index = start; index < Math.min(updates.length, start + maxRows); index++) {
     const update = updates[index]!;
     const active = index === state.updateIndex;
+    const updating = state.updatingSkills.some(
+      (skill) => skill.name === update.name && skill.scope === update.scope
+    );
+    const marker = updating ? renderUpdateSpinner(state.loadingFrame) : `${YELLOW}↑${RESET}`;
     const scopeColor = update.scope === 'global' ? GREEN : CYAN;
     const suffixWidth = update.scope.length + 1;
     listLines.push(
       active
-        ? `${SELECTED_BG}${BOLD}${BRIGHT_TEXT} ▸ ↑ ${pad(safe(update.name), listWidth - 5 - suffixWidth)} ${scopeColor}${update.scope}${RESET}`
-        : `  ${YELLOW}↑${RESET} ${pad(`${TEXT}${safe(update.name)}${RESET}`, listWidth - 4 - suffixWidth)} ${scopeColor}${update.scope}${RESET}`
+        ? `${SELECTED_BG}${BOLD}  ${marker}${SELECTED_BG}${BOLD} ${TEXT}${pad(safe(update.name), listWidth - 4 - suffixWidth)}${RESET}${SELECTED_BG}${BOLD} ${scopeColor}${update.scope}${RESET}`
+        : `  ${marker} ${pad(`${TEXT}${safe(update.name)}${RESET}`, listWidth - 4 - suffixWidth)} ${scopeColor}${update.scope}${RESET}`
     );
   }
   if (start > 0 || start + maxRows < updates.length) {
@@ -623,24 +674,9 @@ function renderUpdates(state: TuiState, width: number, height: number): string[]
   }
   lines.push(
     '',
-    `${CYAN}↑↓${RESET} ${DIM}select${RESET}  ${GREEN}u${RESET} ${DIM}update selected${RESET}  ${YELLOW}U${RESET} ${DIM}update all${RESET}  ${CYAN}r${RESET} ${DIM}check again${RESET}  ${MAGENTA}s${RESET} ${DIM}scope${RESET}`
+    `${CYAN}↑↓${RESET} ${DIM}select${RESET}  ${GREEN}u${RESET} ${DIM}update selected${RESET}  ${YELLOW}U${RESET} ${DIM}update all${RESET}  ${CYAN}r${RESET} ${DIM}check again${RESET}`
   );
   return lines;
-}
-
-function renderUpdateProgress(state: TuiState, width: number): string[] {
-  const progress = state.updateProgress!;
-  const ratio = progress.total === 0 ? 0 : Math.min(1, progress.checked / progress.total);
-  const filledWidth = Math.round(width * ratio);
-  const bar = `${YELLOW}${'━'.repeat(filledWidth)}${RESET}${DIM}${'─'.repeat(
-    Math.max(0, width - filledWidth)
-  )}${RESET}`;
-  const count =
-    progress.total === 0
-      ? `${BOLD}${TEXT}Preparing update check…${RESET}`
-      : `${BOLD}${TEXT}Checking ${progress.checked} of ${progress.total}${RESET}`;
-  const current = progress.current ? ` ${DIM}· ${safe(progress.current)}${RESET}` : '';
-  return [pad(bar, width), pad(`${count}${current}`, width)];
 }
 
 function renderAgents(state: TuiState): string[] {
@@ -674,7 +710,6 @@ function renderHelp(): string[] {
     `${CYAN}← → / Tab${RESET} Switch sections`,
     `${CYAN}Shift + O I U A${RESET} Open a section by its first letter`,
     `${CYAN}Enter${RESET}      Open or run the selected action`,
-    `${CYAN}s${RESET}          Toggle project/global scope`,
     `${CYAN}r${RESET}          Refresh installed skills`,
     `${CYAN}f${RESET}          Open the detected-agent filter picker`,
     `${CYAN}Space${RESET}      Enable or disable the selected installed skill`,
@@ -715,10 +750,11 @@ export function renderTuiFrame(state: TuiState, size: TuiSize): string[] {
   const columns = Math.max(60, size.columns);
   const rows = Math.max(16, size.rows);
   const topPanel = renderTopPanel(state, columns);
-  const lines: string[] = [...topPanel, accentRule(columns)];
-  if (state.screen === 'updates' && state.updateProgress !== null) {
-    lines.push(...renderUpdateProgress(state, columns));
-  }
+  const menuRule =
+    state.screen === 'updates' && state.updateProgress !== null
+      ? updateProgressRule(state.updateProgress, columns)
+      : accentRule(columns);
+  const lines: string[] = [...topPanel, menuRule];
   lines.push('');
 
   const footerRows = 2;
@@ -726,15 +762,19 @@ export function renderTuiFrame(state: TuiState, size: TuiSize): string[] {
   const main = renderMain(state, columns, mainHeight);
   for (const line of main) lines.push(pad(line, columns));
 
+  const navigationStatus = `${CYAN}↑↓${RESET} ${DIM}navigate${RESET}  ${GREEN}Enter${RESET} ${DIM}select${RESET}  ${MAGENTA}?${RESET} ${DIM}help${RESET}  ${YELLOW}q${RESET} ${DIM}quit${RESET}`;
+  const updateLoaderIsVisible =
+    state.screen === 'updates' &&
+    (state.updateProgress !== null || state.updatingSkills.length > 0);
   const status = state.removeConfirmation
     ? `${RED}${BOLD}Remove ${safe(state.removeConfirmation.name)}?${RESET}  ${YELLOW}y / Enter${RESET} ${DIM}confirm${RESET}  ${CYAN}n / Esc${RESET} ${DIM}cancel${RESET}`
-    : state.loading
-      ? `${YELLOW}${BOLD}◌ ${safe(state.loading)}${RESET}`
+    : state.loading && !updateLoaderIsVisible
+      ? `${renderUpdateSpinner(state.loadingFrame)}  ${YELLOW}${BOLD}${safe(state.loading)}${RESET}`
       : state.error
         ? `${RED}${BOLD}✕ ${safe(state.error)}${RESET}`
         : state.message
           ? `${GREEN}${BOLD}✓ ${safe(state.message)}${RESET}`
-          : `${CYAN}↑↓${RESET} ${DIM}navigate${RESET}  ${GREEN}Enter${RESET} ${DIM}select${RESET}  ${MAGENTA}?${RESET} ${DIM}help${RESET}  ${YELLOW}q${RESET} ${DIM}quit${RESET}`;
+          : navigationStatus;
   const footer = [horizontalRule(columns), pad(status, columns)];
   const visibleLines = lines.slice(0, Math.max(0, rows - footer.length));
   while (visibleLines.length < rows - footer.length) visibleLines.push(' '.repeat(columns));
@@ -824,12 +864,9 @@ export function conflictsWithBackgroundUpdateCheck(
 ): boolean {
   const isSpace = key.name === 'space' || key.sequence === ' ';
   return (
-    key.name === 's' ||
     key.name === 'r' ||
     (state.screen === 'updates' && key.name === 'u') ||
-    (state.screen === 'installed' &&
-      !key.shift &&
-      (key.name === 'd' || key.name === 'u' || isSpace))
+    (state.screen === 'installed' && !key.shift && (key.name === 'd' || isSpace))
   );
 }
 
@@ -844,6 +881,7 @@ export async function runTui(): Promise<void> {
   let inputEnabled = true;
   let cleanedUp = false;
   let rendering = false;
+  let renderPending = false;
   let updateCheckRunning = false;
 
   const enterScreen = (): void => {
@@ -855,13 +893,24 @@ export async function runTui(): Promise<void> {
   };
 
   const render = (): void => {
-    if (!rendering && !cleanedUp) {
-      rendering = true;
-      process.stdout.write(renderTui(state, getTerminalSize()), () => {
-        rendering = false;
-      });
+    if (cleanedUp) return;
+    if (rendering) {
+      renderPending = true;
+      return;
     }
+    rendering = true;
+    renderPending = false;
+    process.stdout.write(renderTui(state, getTerminalSize()), () => {
+      rendering = false;
+      if (renderPending) render();
+    });
   };
+
+  const loadingAnimationTimer = setInterval(() => {
+    if (!state.loading || cleanedUp) return;
+    state.loadingFrame = (state.loadingFrame + 1) % 20;
+    render();
+  }, LOADING_SPINNER_DELAY_MS);
 
   const refresh = async (): Promise<void> => {
     state.loading = 'Refreshing workspace…';
@@ -923,12 +972,18 @@ export async function runTui(): Promise<void> {
     state.error = null;
     render();
 
+    let progressRenderScheduled = false;
     try {
       const result = await checkAvailableSkillUpdates({
-        scope: state.scope,
+        scope: 'all',
         onProgress: (progress) => {
           state.updateProgress = progress;
-          render();
+          if (progressRenderScheduled) return;
+          progressRenderScheduled = true;
+          setImmediate(() => {
+            progressRenderScheduled = false;
+            render();
+          });
         },
       });
       state.availableUpdates = result.updates;
@@ -969,15 +1024,33 @@ export async function runTui(): Promise<void> {
       return;
     }
 
-    const names = Array.from(new Set(updates.map((update) => update.name)));
-    const label = all ? `Updating ${names.length} skills` : `Updating ${names[0]}`;
-    const succeeded = await runInTui(label, [
-      'update',
-      ...names,
-      '-y',
-      state.scope === 'global' ? '-g' : '-p',
-    ]);
-    if (succeeded) await checkUpdatesInTui();
+    const groups = new Map<TuiScope, string[]>();
+    for (const update of updates) {
+      const names = groups.get(update.scope) || [];
+      if (!names.includes(update.name)) names.push(update.name);
+      groups.set(update.scope, names);
+    }
+
+    let updated = false;
+    for (const scope of ['project', 'global'] as const) {
+      const names = groups.get(scope);
+      if (!names?.length) continue;
+      const label = all
+        ? `Updating ${names.length} ${scope} ${names.length === 1 ? 'skill' : 'skills'}`
+        : `Updating ${names[0]}`;
+      state.updatingSkills = names.map((name) => ({ name, scope }));
+      const succeeded = await runInTui(label, [
+        'update',
+        ...names,
+        '-y',
+        scope === 'global' ? '-g' : '-p',
+      ]);
+      state.updatingSkills = [];
+      render();
+      if (!succeeded) break;
+      updated = true;
+    }
+    if (updated) await checkUpdatesInTui();
   };
 
   const navigateTo = async (screen: TuiScreen): Promise<void> => {
@@ -1116,13 +1189,6 @@ export async function runTui(): Promise<void> {
       } else if (key.name === 'right' || key.name === 'tab') {
         await navigateTo(nextScreen(state, 1));
         return;
-      } else if (key.name === 's') {
-        state.scope = state.scope === 'project' ? 'global' : 'project';
-        clampIndexes(state);
-        if (state.screen === 'updates') {
-          await checkUpdatesInTui();
-          return;
-        }
       } else if (key.name === 'r') {
         if (state.screen === 'updates') {
           await checkUpdatesInTui();
@@ -1154,19 +1220,6 @@ export async function runTui(): Promise<void> {
             () => setInstalledSkillEnabled(selected, enable),
             `${selected.name} ${enable ? 'enabled' : 'disabled'}.`
           );
-          return;
-        }
-      } else if (key.name === 'u' && state.screen === 'installed') {
-        const selected = getInstalledViewSkills(state)[state.installedIndex];
-        if (selected) {
-          if (selected.disabled) {
-            state.error = `Enable ${selected.name} before updating it.`;
-            state.message = null;
-            render();
-            return;
-          }
-          const args = ['update', selected.name, '-y', selected.scope === 'global' ? '-g' : '-p'];
-          await runInTui(`Updating ${selected.name}`, args);
           return;
         }
       } else if (key.name === 'o' && state.screen === 'installed') {
@@ -1211,6 +1264,7 @@ export async function runTui(): Promise<void> {
   };
 
   const cleanup = (): void => {
+    clearInterval(loadingAnimationTimer);
     if (process.stdin.isTTY) process.stdin.setRawMode(false);
     process.stdin.removeListener('keypress', handleKeypress);
     process.stdout.removeListener('resize', handleResize);

@@ -31,7 +31,7 @@ export interface SkillUpdateCheckResult {
 }
 
 export interface CheckAvailableSkillUpdatesOptions {
-  scope: SkillUpdateScope;
+  scope: SkillUpdateScope | 'all';
   cwd?: string;
   onProgress?: (progress: SkillUpdateCheckProgress) => void;
 }
@@ -53,6 +53,24 @@ interface WellKnownCandidate {
   name: string;
   source: string;
   digest: string;
+}
+
+const UPDATE_CHECK_CONCURRENCY = 4;
+
+async function mapWithConcurrency<T, R>(items: T[], worker: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workers = Array.from(
+    { length: Math.min(UPDATE_CHECK_CONCURRENCY, items.length) },
+    async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex++;
+        results[index] = await worker(items[index]!);
+      }
+    }
+  );
+  await Promise.all(workers);
+  return results;
 }
 
 function sourceGroupKey(source: string, ref?: string): string {
@@ -94,7 +112,6 @@ async function checkWellKnownCandidates(
   updates: AvailableSkillUpdate[],
   reportChecked: (name: string) => void
 ): Promise<number> {
-  let failedCount = 0;
   const groups = new Map<string, WellKnownCandidate[]>();
   for (const candidate of candidates) {
     const group = groups.get(candidate.source) || [];
@@ -102,15 +119,13 @@ async function checkWellKnownCandidates(
     groups.set(candidate.source, group);
   }
 
-  for (const [source, items] of groups) {
+  const failures = await mapWithConcurrency([...groups], async ([source, items]) => {
     const checkItems: WellKnownUpdateItem[] = items.map((item) => ({
       name: item.name,
       digest: item.digest,
     }));
     const result = await checkWellKnownForUpdates(source, checkItems);
-    if (result.status === 'error') {
-      failedCount += items.length;
-    } else if (result.status === 'changed') {
+    if (result.status === 'changed') {
       const changed = new Set(result.changedSkills);
       for (const item of items) {
         if (changed.has(item.name)) {
@@ -124,9 +139,10 @@ async function checkWellKnownCandidates(
       }
     }
     for (const item of items) reportChecked(item.name);
-  }
+    return result.status === 'error' ? items.length : 0;
+  });
 
-  return failedCount;
+  return failures.reduce((total, count) => total + count, 0);
 }
 
 async function checkProjectUpdates(
@@ -162,7 +178,7 @@ async function checkProjectUpdates(
   const totalCount = candidates.length + wellKnown.length;
   const reportChecked = createProgressReporter(totalCount, options.onProgress);
   const updates: AvailableSkillUpdate[] = [];
-  let failedCount = await checkWellKnownCandidates(wellKnown, 'project', updates, reportChecked);
+  const wellKnownFailures = checkWellKnownCandidates(wellKnown, 'project', updates, reportChecked);
   const groups = new Map<string, ProjectCandidate[]>();
 
   for (const candidate of candidates) {
@@ -172,10 +188,11 @@ async function checkProjectUpdates(
     groups.set(key, group);
   }
 
-  for (const items of groups.values()) {
+  const groupFailures = await mapWithConcurrency([...groups.values()], async (items) => {
     const first = items[0]!;
     let tempDir: string | null = null;
     let reportedCount = 0;
+    let failedCount = 0;
     try {
       tempDir = await cloneRepo(first.cloneSource, first.entry.ref);
       const discovered = await discoverSkills(tempDir, undefined, { fullDepth: true });
@@ -205,7 +222,10 @@ async function checkProjectUpdates(
     } finally {
       if (tempDir) await cleanupTempDir(tempDir);
     }
-  }
+    return failedCount;
+  });
+  const failedCount =
+    (await wellKnownFailures) + groupFailures.reduce((total, count) => total + count, 0);
 
   return {
     updates: updates.sort((a, b) => a.name.localeCompare(b.name)),
@@ -239,7 +259,7 @@ async function checkGlobalUpdates(
   const totalCount = candidates.length + wellKnown.length;
   const reportChecked = createProgressReporter(totalCount, options.onProgress);
   const updates: AvailableSkillUpdate[] = [];
-  let failedCount = await checkWellKnownCandidates(wellKnown, 'global', updates, reportChecked);
+  const wellKnownFailures = checkWellKnownCandidates(wellKnown, 'global', updates, reportChecked);
   const groups = new Map<string, GlobalCandidate[]>();
 
   for (const candidate of candidates) {
@@ -249,9 +269,10 @@ async function checkGlobalUpdates(
     groups.set(key, group);
   }
 
-  for (const items of groups.values()) {
+  const groupFailures = await mapWithConcurrency([...groups.values()], async (items) => {
     const first = items[0]!;
     let completed = false;
+    let failedCount = 0;
 
     if (first.entry.sourceType === 'github') {
       try {
@@ -273,7 +294,7 @@ async function checkGlobalUpdates(
       }
     }
 
-    if (completed) continue;
+    if (completed) return failedCount;
 
     let tempDir: string | null = null;
     let reportedCount = 0;
@@ -312,7 +333,10 @@ async function checkGlobalUpdates(
     } finally {
       if (tempDir) await cleanupTempDir(tempDir);
     }
-  }
+    return failedCount;
+  });
+  const failedCount =
+    (await wellKnownFailures) + groupFailures.reduce((total, count) => total + count, 0);
 
   return {
     updates: updates.sort((a, b) => a.name.localeCompare(b.name)),
@@ -326,5 +350,38 @@ async function checkGlobalUpdates(
 export async function checkAvailableSkillUpdates(
   options: CheckAvailableSkillUpdatesOptions
 ): Promise<SkillUpdateCheckResult> {
-  return options.scope === 'global' ? checkGlobalUpdates(options) : checkProjectUpdates(options);
+  if (options.scope === 'global') return checkGlobalUpdates(options);
+  if (options.scope === 'project') return checkProjectUpdates(options);
+
+  const progress = {
+    project: { checked: 0, total: 0, current: null as string | null },
+    global: { checked: 0, total: 0, current: null as string | null },
+  };
+  const reportProgress =
+    (scope: SkillUpdateScope) =>
+    (value: SkillUpdateCheckProgress): void => {
+      progress[scope] = value;
+      options.onProgress?.({
+        checked: progress.project.checked + progress.global.checked,
+        total: progress.project.total + progress.global.total,
+        current: value.current,
+      });
+    };
+
+  const [project, global] = await Promise.all([
+    checkProjectUpdates({ ...options, scope: 'project', onProgress: reportProgress('project') }),
+    checkGlobalUpdates({ ...options, scope: 'global', onProgress: reportProgress('global') }),
+  ]);
+  const checkedCount = project.checkedCount + global.checkedCount;
+  const totalCount = project.totalCount + global.totalCount;
+
+  return {
+    updates: [...project.updates, ...global.updates].sort(
+      (a, b) => a.name.localeCompare(b.name) || a.scope.localeCompare(b.scope)
+    ),
+    checkedCount,
+    totalCount,
+    failedCount: project.failedCount + global.failedCount,
+    skippedCount: project.skippedCount + global.skippedCount,
+  };
 }

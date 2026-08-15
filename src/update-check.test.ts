@@ -166,4 +166,118 @@ describe('checkAvailableSkillUpdates', () => {
       },
     ]);
   });
+
+  it('combines project and global updates with aggregate progress', async () => {
+    vi.mocked(localLock.readLocalLock).mockResolvedValue({
+      version: 1,
+      skills: {
+        project_alpha: {
+          source: 'owner/project-repo',
+          sourceType: 'github',
+          skillPath: 'skills/project-alpha/SKILL.md',
+          computedHash: 'project-current',
+        },
+      },
+    });
+    vi.mocked(skillLock.readSkillLock).mockResolvedValue({
+      version: 3,
+      skills: {
+        global_beta: {
+          source: 'owner/global-repo',
+          sourceUrl: 'https://github.com/owner/global-repo',
+          sourceType: 'github',
+          skillPath: 'skills/global-beta/SKILL.md',
+          skillFolderHash: 'global-current',
+          installedAt: '',
+          updatedAt: '',
+        },
+      },
+    });
+    vi.mocked(git.cloneRepo).mockResolvedValue('/tmp/project-repo');
+    vi.mocked(skills.discoverSkills).mockResolvedValue([
+      {
+        name: 'project_alpha',
+        path: '/tmp/project-repo/skills/project-alpha',
+        description: 'Project alpha',
+        rawContent: '',
+      },
+    ]);
+    vi.mocked(localLock.computeSkillFolderHash).mockResolvedValue('project-latest');
+    vi.mocked(blob.fetchRepoTree).mockResolvedValue({ sha: 'root', branch: 'main', tree: [] });
+    vi.mocked(blob.getSkillFolderHashFromTree).mockReturnValue('global-latest');
+    const progress: SkillUpdateCheckProgress[] = [];
+
+    const result = await checkAvailableSkillUpdates({
+      scope: 'all',
+      onProgress: (value) => progress.push(value),
+    });
+
+    expect(result).toEqual({
+      updates: [
+        {
+          name: 'global_beta',
+          scope: 'global',
+          source: 'owner/global-repo',
+          sourceType: 'github',
+        },
+        {
+          name: 'project_alpha',
+          scope: 'project',
+          source: 'owner/project-repo',
+          sourceType: 'github',
+        },
+      ],
+      checkedCount: 2,
+      totalCount: 2,
+      failedCount: 0,
+      skippedCount: 0,
+    });
+    expect(progress.at(-1)).toMatchObject({ checked: 2, total: 2 });
+    expect(progress.at(-1)?.current).toBeTruthy();
+    expect(localLock.readLocalLock).toHaveBeenCalledOnce();
+    expect(skillLock.readSkillLock).toHaveBeenCalledOnce();
+  });
+
+  it('checks independent global repositories concurrently', async () => {
+    vi.mocked(skillLock.readSkillLock).mockResolvedValue({
+      version: 3,
+      skills: {
+        alpha: {
+          source: 'owner/alpha-repo',
+          sourceUrl: 'https://github.com/owner/alpha-repo',
+          sourceType: 'github',
+          skillPath: 'skills/alpha/SKILL.md',
+          skillFolderHash: 'alpha-current',
+          installedAt: '',
+          updatedAt: '',
+        },
+        beta: {
+          source: 'owner/beta-repo',
+          sourceUrl: 'https://github.com/owner/beta-repo',
+          sourceType: 'github',
+          skillPath: 'skills/beta/SKILL.md',
+          skillFolderHash: 'beta-current',
+          installedAt: '',
+          updatedAt: '',
+        },
+      },
+    });
+    let activeChecks = 0;
+    let peakChecks = 0;
+    vi.mocked(blob.fetchRepoTree).mockImplementation(async () => {
+      activeChecks++;
+      peakChecks = Math.max(peakChecks, activeChecks);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      activeChecks--;
+      return { sha: 'root', branch: 'main', tree: [] };
+    });
+    vi.mocked(blob.getSkillFolderHashFromTree).mockImplementation((_tree, path) =>
+      path.includes('alpha') ? 'alpha-current' : 'beta-current'
+    );
+
+    const result = await checkAvailableSkillUpdates({ scope: 'global' });
+
+    expect(result.failedCount).toBe(0);
+    expect(peakChecks).toBe(2);
+  });
 });
