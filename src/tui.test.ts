@@ -5,6 +5,7 @@ import {
   applyAgentFilterMenuSelection,
   conflictsWithBackgroundUpdateCheck,
   createTuiState,
+  cycleInstalledScopeFilter,
   moveAgentFilterMenu,
   openAgentFilterMenu,
   renderTuiFrame,
@@ -159,6 +160,12 @@ describe('TUI renderer', () => {
     expect(plainOutput).toMatch(/release-notes\s+global/);
     expect(plainOutput).toContain('Status ○ disabled');
     expect(plainOutput).toContain('Source global-owner/release-notes');
+    expect(plainOutput).toMatch(/All\(2\)\s+· Agent\s+All agents/);
+    expect(plainOutput).not.toContain('Scope All');
+    expect(output).toContain('\x1b[45m\x1b[1m\x1b[39m All(2) \x1b[0m');
+    expect(output).toContain('\x1b[44m\x1b[1m\x1b[39m All agents \x1b[0m');
+    expect(output).toContain('\x1b[35ms\x1b[0m \x1b[2mscope');
+    expect(plainOutput).toContain('s scope  f agent filter');
     expect(plainOutput).toContain('f agent filter  Space enable  o source');
     expect(plainOutput).not.toContain('u update');
     expect(output).toContain(
@@ -284,13 +291,58 @@ describe('TUI renderer', () => {
     const rendered = renderTuiFrame(state, { columns: 100, rows: 28 }).join('\n');
     const output = stripTerminalEscapes(rendered);
 
-    expect(output).toContain('project + global · Codex · 2/3');
-    expect(output).not.toContain('Agent Codex');
+    expect(output).toMatch(/All\(2\)\s+· Agent\s+Codex/);
+    expect(output).not.toContain('Scope All');
     expect(rendered).toContain('\x1b[44m\x1b[1m\x1b[39m Codex \x1b[0m');
     expect(output).toContain('codex-only');
     expect(output).toContain('shared-skill');
     expect(output).not.toContain('cursor-only');
     expect(output).toContain('f agent filter');
+  });
+
+  it('cycles the Installed scope through project, global, and all', () => {
+    const state = createTuiState();
+    state.screen = 'installed';
+    state.installed = [
+      {
+        name: 'project-helper',
+        description: 'A project-local helper.',
+        path: '/workspace/.agents/skills/project-helper',
+        canonicalPath: '/workspace/.agents/skills/project-helper',
+        scope: 'project',
+        agents: ['codex'],
+      },
+      {
+        name: 'global-helper',
+        description: 'A global helper.',
+        path: '/home/user/.agents/skills/global-helper',
+        canonicalPath: '/home/user/.agents/skills/global-helper',
+        scope: 'global',
+        agents: ['codex'],
+      },
+    ];
+    state.installedIndex = 1;
+
+    expect(cycleInstalledScopeFilter(state)).toBe('project');
+    expect(state.installedIndex).toBe(0);
+    let output = stripTerminalEscapes(renderTuiFrame(state, { columns: 100, rows: 28 }).join('\n'));
+    expect(output).toMatch(/Project\(1\)\s+· Agent\s+All agents/);
+    expect(output).not.toContain('Scope Project');
+    expect(output).toContain('project-helper');
+    expect(output).not.toContain('global-helper');
+
+    expect(cycleInstalledScopeFilter(state)).toBe('global');
+    output = stripTerminalEscapes(renderTuiFrame(state, { columns: 100, rows: 28 }).join('\n'));
+    expect(output).toMatch(/Global\(1\)\s+· Agent\s+All agents/);
+    expect(output).not.toContain('Scope Global');
+    expect(output).not.toContain('project-helper');
+    expect(output).toContain('global-helper');
+
+    expect(cycleInstalledScopeFilter(state)).toBe('all');
+    output = stripTerminalEscapes(renderTuiFrame(state, { columns: 100, rows: 28 }).join('\n'));
+    expect(output).toMatch(/All\(2\)\s+· Agent\s+All agents/);
+    expect(output).toContain('project-helper');
+    expect(output).toContain('global-helper');
   });
 
   it('switches the detected-agent filter with an arrow-key and Vim-key picker', () => {

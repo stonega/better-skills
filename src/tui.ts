@@ -34,6 +34,7 @@ const MAGENTA = '\x1b[35m';
 const BRIGHT_TEXT = '\x1b[97m';
 const SELECTED_BG = '\x1b[44m';
 const GLOBAL_METRIC_BG = '\x1b[42m';
+const ALL_SCOPE_BG = '\x1b[45m';
 const BOLD = '\x1b[1m';
 const INVERSE = '\x1b[7m';
 const CHECKING_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
@@ -63,6 +64,7 @@ const NAV_ITEMS: Array<{ id: TuiScreen; label: string; shortcut: string; color: 
 
 export type TuiScreen = 'overview' | 'installed' | 'updates' | 'agents' | 'help';
 export type TuiScope = 'project' | 'global';
+export type InstalledScopeFilter = TuiScope | 'all';
 
 export interface TuiLockEntry {
   source?: string;
@@ -78,6 +80,7 @@ export interface TuiLockEntry {
 export interface TuiState {
   screen: TuiScreen;
   installed: InstalledSkill[];
+  installedScopeFilter: InstalledScopeFilter;
   installedAgentFilter: AgentType | null;
   agentFilterMenuOpen: boolean;
   agentFilterMenuIndex: number;
@@ -110,6 +113,7 @@ export function createTuiState(): TuiState {
   return {
     screen: 'overview',
     installed: [],
+    installedScopeFilter: 'all',
     installedAgentFilter: null,
     agentFilterMenuOpen: false,
     agentFilterMenuIndex: 0,
@@ -158,8 +162,20 @@ function clampIndexes(state: TuiState): void {
 }
 
 function getInstalledViewSkills(state: TuiState): InstalledSkill[] {
-  if (!state.installedAgentFilter) return state.installed;
-  return state.installed.filter((skill) => skill.agents.includes(state.installedAgentFilter!));
+  return state.installed.filter(
+    (skill) =>
+      (state.installedScopeFilter === 'all' || skill.scope === state.installedScopeFilter) &&
+      (!state.installedAgentFilter || skill.agents.includes(state.installedAgentFilter))
+  );
+}
+
+export function cycleInstalledScopeFilter(state: TuiState): InstalledScopeFilter {
+  const scopes: InstalledScopeFilter[] = ['all', 'project', 'global'];
+  const currentIndex = scopes.indexOf(state.installedScopeFilter);
+  state.installedScopeFilter = scopes[(currentIndex + 1) % scopes.length]!;
+  state.installedIndex = 0;
+  clampIndexes(state);
+  return state.installedScopeFilter;
 }
 
 interface AgentFilterOption {
@@ -353,6 +369,19 @@ function scopeLabel(scope: TuiScope): string {
   return scope === 'project' ? 'Project' : 'Global';
 }
 
+function installedScopeFilterLabel(scope: InstalledScopeFilter): string {
+  return scope === 'all' ? 'All' : scopeLabel(scope);
+}
+
+function installedScopeFilterStyle(scope: InstalledScopeFilter): {
+  color: string;
+  background: string;
+} {
+  if (scope === 'project') return { color: CYAN, background: SELECTED_BG };
+  if (scope === 'global') return { color: GREEN, background: GLOBAL_METRIC_BG };
+  return { color: MAGENTA, background: ALL_SCOPE_BG };
+}
+
 function formatCount(count: number, singular: string, plural = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : plural}`;
 }
@@ -453,14 +482,12 @@ function renderInstalled(state: TuiState, width: number, height: number): string
   const filterLabel = state.installedAgentFilter
     ? agents[state.installedAgentFilter]?.displayName || state.installedAgentFilter
     : 'All agents';
-  const filterBadge = state.installedAgentFilter
-    ? `${SELECTED_BG}${BOLD}${TEXT} ${safe(filterLabel)} ${RESET}`
-    : ` ${DIM}All agents ${RESET}`;
-  const filterDisplay = state.installedAgentFilter
-    ? filterBadge
-    : ` ${BLUE}Agent${RESET}${filterBadge}`;
+  const scopeFilterLabel = installedScopeFilterLabel(state.installedScopeFilter);
+  const scopeFilterStyle = installedScopeFilterStyle(state.installedScopeFilter);
+  const scopeBadge = `${scopeFilterStyle.background}${BOLD}${TEXT} ${scopeFilterLabel}(${skills.length}) ${RESET}`;
+  const filterBadge = `${SELECTED_BG}${BOLD}${TEXT} ${safe(filterLabel)} ${RESET}`;
   const lines: string[] = [
-    `${BOLD}${TEXT}Installed skills${RESET} ${DIM}· project + global ·${RESET}${filterDisplay}${DIM}· ${skills.length}/${state.installed.length}${RESET}`,
+    `${BOLD}${TEXT}Installed skills${RESET} ${DIM}·${RESET} ${scopeBadge} ${DIM}·${RESET} ${BLUE}Agent${RESET} ${filterBadge}`,
     '',
   ];
   const tableRowBudget = Math.max(1, height - 4);
@@ -473,7 +500,11 @@ function renderInstalled(state: TuiState, width: number, height: number): string
 
   const listLines: string[] = [];
   if (skills.length === 0) {
-    listLines.push(`${DIM}No skills are effective for ${safe(filterLabel)}.${RESET}`);
+    const scopeDescription =
+      state.installedScopeFilter === 'all'
+        ? 'installed skills'
+        : `${state.installedScopeFilter} skills`;
+    listLines.push(`${DIM}No ${scopeDescription} are effective for ${safe(filterLabel)}.${RESET}`);
   } else {
     for (let index = start; index < Math.min(skills.length, start + maxRows); index++) {
       const skill = skills[index]!;
@@ -536,7 +567,7 @@ function renderInstalled(state: TuiState, width: number, height: number): string
   const toggleAction = selected?.disabled ? 'enable' : 'disable';
   lines.push(
     '',
-    `${CYAN}↑↓${RESET} ${DIM}select${RESET}  ${BLUE}f${RESET} ${DIM}agent filter${RESET}  ${YELLOW}Space${RESET} ${DIM}${toggleAction}${RESET}  ${MAGENTA}o${RESET} ${DIM}source${RESET}  ${RED}d${RESET} ${DIM}remove${RESET}  ${CYAN}r${RESET} ${DIM}refresh${RESET}`
+    `${CYAN}↑↓${RESET} ${DIM}select${RESET}  ${scopeFilterStyle.color}s${RESET} ${DIM}scope${RESET}  ${BLUE}f${RESET} ${DIM}agent filter${RESET}  ${YELLOW}Space${RESET} ${DIM}${toggleAction}${RESET}  ${MAGENTA}o${RESET} ${DIM}source${RESET}  ${RED}d${RESET} ${DIM}remove${RESET}  ${CYAN}r${RESET} ${DIM}refresh${RESET}`
   );
   return lines;
 }
@@ -711,6 +742,7 @@ function renderHelp(): string[] {
     `${CYAN}Shift + O I U A${RESET} Open a section by its first letter`,
     `${CYAN}Enter${RESET}      Open or run the selected action`,
     `${CYAN}r${RESET}          Refresh installed skills`,
+    `${MAGENTA}s${RESET}          Cycle Installed scope: All, Project, Global`,
     `${CYAN}f${RESET}          Open the detected-agent filter picker`,
     `${CYAN}Space${RESET}      Enable or disable the selected installed skill`,
     `${CYAN}u${RESET}          Update the selected installed skill or available update`,
@@ -1195,6 +1227,12 @@ export async function runTui(): Promise<void> {
           return;
         }
         await refresh();
+        return;
+      } else if (key.name === 's' && !key.shift && state.screen === 'installed') {
+        cycleInstalledScopeFilter(state);
+        state.message = null;
+        state.error = null;
+        render();
         return;
       } else if (key.name === 'f' && state.screen === 'installed') {
         openAgentFilterMenu(state);
