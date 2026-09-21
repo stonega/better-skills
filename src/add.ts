@@ -1053,10 +1053,14 @@ export async function runAdd(args: string[], options: AddOptions = {}): Promise<
     );
     console.log();
     console.log(pc.dim('  Usage:'));
-    console.log(`    ${pc.cyan('npx skills add')} ${pc.yellow('<source>')} ${pc.dim('[options]')}`);
+    console.log(
+      `    ${pc.cyan('npx @stonega/skills add')} ${pc.yellow('<source>')} ${pc.dim('[options]')}`
+    );
     console.log();
     console.log(pc.dim('  Example:'));
-    console.log(`    ${pc.cyan('npx skills add')} ${pc.yellow('vercel-labs/agent-skills')}`);
+    console.log(
+      `    ${pc.cyan('npx @stonega/skills add')} ${pc.yellow('vercel-labs/agent-skills')}`
+    );
     console.log();
     process.exit(1);
   }
@@ -2139,13 +2143,17 @@ async function promptForFindSkills(
         });
       } catch {
         p.log.warn('Failed to install find-skills. You can try again with:');
-        p.log.message(pc.dim('  npx skills add vercel-labs/skills@find-skills -g -y --all'));
+        p.log.message(
+          pc.dim('  npx @stonega/skills add vercel-labs/skills@find-skills -g -y --all')
+        );
       }
     } else {
       // User declined - dismiss the prompt
       await dismissPrompt('findSkillsPrompt');
       p.log.message(
-        pc.dim('You can install it later with: npx skills add vercel-labs/skills@find-skills')
+        pc.dim(
+          'You can install it later with: npx @stonega/skills add vercel-labs/skills@find-skills'
+        )
       );
     }
   } catch {

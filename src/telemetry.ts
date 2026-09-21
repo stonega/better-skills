@@ -8,7 +8,7 @@ interface InstallTelemetryData {
   agents: string;
   global?: '1';
   skillFiles?: string; // JSON stringified { skillName: relativePath }
-  /** User-facing URL that can be passed back to `skills add`. */
+  /** User-facing URL that can be passed back to `better-skills add`. */
   installUrl?: string;
   /** Caller-provided JSON attached to this install telemetry event. */
   metadata?: string;

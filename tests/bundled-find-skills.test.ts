@@ -14,6 +14,6 @@ describe('bundled find-skills skill', () => {
       path: join(rootDir, 'skills', 'find-skills'),
     });
     expect(skill?.description).toContain('discover and install agent skills');
-    expect(skill?.rawContent).toContain('npx skills find [query]');
+    expect(skill?.rawContent).toContain('npx @stonega/skills find [query]');
   });
 });

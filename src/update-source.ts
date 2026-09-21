@@ -109,7 +109,7 @@ function appendFolderAndRef(source: string, skillPath: string, ref?: string): st
 }
 
 /**
- * Build the source argument for `skills add` during update.
+ * Build the source argument for `better-skills add` during update.
  * Uses shorthand form for path-targeted updates to avoid branch/path ambiguity.
  */
 export function buildUpdateInstallSource(entry: UpdateSourceEntry): string | null {
@@ -132,7 +132,7 @@ export function buildUpdateInstallSource(entry: UpdateSourceEntry): string | nul
 }
 
 /**
- * Build the source argument for `skills add` during project-level update.
+ * Build the source argument for `better-skills add` during project-level update.
  * Returns null for legacy generic-Git or GitLab lock entries whose source was
  * normalized to an ambiguous owner/repo shorthand. Those entries lack the
  * original host, so reinterpreting them as GitHub would be unsafe.

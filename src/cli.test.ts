@@ -3,11 +3,11 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { runCli, runCliOutput, stripLogo, hasLogo } from './test-utils.ts';
 
-describe('skills CLI', () => {
+describe('better-skills CLI', () => {
   describe('--help', () => {
     it('should display help message', () => {
       const output = runCliOutput(['--help']);
-      expect(output).toContain('Usage: skills <command> [options]');
+      expect(output).toContain('Usage: better-skills <command> [options]');
       expect(output).toContain('Manage Skills:');
       expect(output).toContain('init [name]');
       expect(output).toContain('add <package>');
@@ -53,11 +53,11 @@ describe('skills CLI', () => {
       const result = runCli([]);
       const output = stripLogo(result.stdout);
       expect(output).toContain('The open agent skills ecosystem');
-      expect(output).toContain('npx skills add');
-      expect(output).toContain('npx skills use');
-      expect(output).toContain('npx skills panel');
-      expect(output).toContain('npx skills update');
-      expect(output).toContain('npx skills init');
+      expect(output).toContain('npx @stonega/skills add');
+      expect(output).toContain('npx @stonega/skills use');
+      expect(output).toContain('npx @stonega/skills panel');
+      expect(output).toContain('npx @stonega/skills update');
+      expect(output).toContain('npx @stonega/skills init');
       expect(output).toContain('skills.sh');
     });
   });
@@ -66,7 +66,7 @@ describe('skills CLI', () => {
     it('routes panel as the terminal-interface command', () => {
       const result = runCli(['panel']);
       expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain('skills panel requires an interactive terminal.');
+      expect(result.stderr).toContain('better-skills panel requires an interactive terminal.');
     });
 
     it('does not expose the old tui command', () => {
@@ -78,7 +78,7 @@ describe('skills CLI', () => {
       const output = runCliOutput(['unknown-command']);
       expect(output).toMatchInlineSnapshot(`
         "Unknown command: unknown-command
-        Run skills --help for usage.
+        Run better-skills --help for usage.
         "
       `);
     });
@@ -119,13 +119,13 @@ describe('skills CLI', () => {
       it(label, () => {
         const result = runCli([command, '--help']);
         expect(result.exitCode).toBe(0);
-        expect(result.stdout).toContain('Usage: skills <command> [options]');
+        expect(result.stdout).toContain('Usage: better-skills <command> [options]');
       });
 
       it(`${label} (-h alias)`, () => {
         const result = runCli([command, '-h']);
         expect(result.exitCode).toBe(0);
-        expect(result.stdout).toContain('Usage: skills <command> [options]');
+        expect(result.stdout).toContain('Usage: better-skills <command> [options]');
       });
     }
 
@@ -133,7 +133,7 @@ describe('skills CLI', () => {
       const result = runCli(['remove', '--help']);
       expect(result.exitCode).toBe(0);
       // remove has its own help screen distinct from the top-level usage banner
-      expect(result.stdout).toContain('skills remove');
+      expect(result.stdout).toContain('better-skills remove');
     });
 
     it('update --help does not run the update flow', () => {

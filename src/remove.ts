@@ -83,9 +83,9 @@ export async function removeCommand(skillNames: string[], options: RemoveOptions
   if (options.all && namedSkills.length > 0) {
     p.log.error('Cannot combine --all with specific skill names.');
     p.log.info(
-      'Use `skills remove --all` to remove every skill, or omit --all to remove only the named skills.'
+      'Use `better-skills remove --all` to remove every skill, or omit --all to remove only the named skills.'
     );
-    p.log.info(`Example: skills remove ${namedSkills[0]} -y`);
+    p.log.info(`Example: better-skills remove ${namedSkills[0]} -y`);
     process.exit(1);
   }
 
@@ -383,7 +383,7 @@ export async function removeCommand(skillNames: string[], options: RemoveOptions
  * Parse command line options for the remove command.
  * Separates skill names from options flags.
  *
- * Supports both positional names (`skills remove foo`) and `-s/--skill`
+ * Supports both positional names (`better-skills remove foo`) and `-s/--skill`
  * (documented in the CLI help). Unknown flags that start with `-` are ignored
  * so we do not treat `--skill` as a skill name when the flag is misspelled.
  */

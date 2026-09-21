@@ -388,20 +388,20 @@ function spawnAgent(command: string, args: string[]): AgentProcess {
 }
 
 function getUseHelp(): string {
-  return `Usage: skills use <source>[@<skill>] [options]
+  return `Usage: better-skills use <source>[@<skill>] [options]
 
 Generate a prompt for using one skill without installing it.
 
 Options:
   -s, --skill <skill>   Select the skill to use
   -a, --agent <agent>   Start one supported agent interactively (${SUPPORTED_USE_AGENTS.join(', ')})
-  --full-depth          Search nested directories like skills add --full-depth
+  --full-depth          Search nested directories like better-skills add --full-depth
   -h, --help            Show this help message
 
 Examples:
-  skills use vercel-labs/agent-skills@web-design-guidelines | claude
-  skills use vercel-labs/agent-skills --skill web-design-guidelines --agent claude-code
-  skills use vercel-labs/agent-skills@web-design-guidelines --agent codex`;
+  better-skills use vercel-labs/agent-skills@web-design-guidelines | claude
+  better-skills use vercel-labs/agent-skills --skill web-design-guidelines --agent claude-code
+  better-skills use vercel-labs/agent-skills@web-design-guidelines --agent codex`;
 }
 
 function resolveSelector(sourceSelector?: string, optionSelector?: string): string | undefined {
@@ -496,7 +496,7 @@ function formatMultipleSkillsError(source: string, names: string[]): string {
     'This source contains multiple skills. Specify exactly one skill:',
     ...names.map((name) => `  - ${name}`),
     '',
-    `Examples:\n  skills use ${source}@${names[0] ?? '<skill>'}\n  skills use ${source} --skill ${names[0] ?? '<skill>'}`,
+    `Examples:\n  better-skills use ${source}@${names[0] ?? '<skill>'}\n  better-skills use ${source} --skill ${names[0] ?? '<skill>'}`,
   ].join('\n');
 }
 
@@ -518,10 +518,10 @@ function validateUseAgentOption(agentValues: string[] | undefined): string[] {
   );
 
   if (agentValues.includes('*')) {
-    errors.push("skills use --agent does not support '*'; specify exactly one agent.");
+    errors.push("better-skills use --agent does not support '*'; specify exactly one agent.");
   }
   if (agentValues.length > 1) {
-    errors.push('skills use --agent accepts exactly one agent.');
+    errors.push('better-skills use --agent accepts exactly one agent.');
   }
   if (invalidAgents.length > 0) {
     errors.push(
@@ -535,7 +535,7 @@ function validateUseAgentOption(agentValues: string[] | undefined): string[] {
 function formatUnsupportedAgentError(agent: AgentType): string {
   return [
     `Running ${agents[agent].displayName} is not supported yet.`,
-    `Supported agents for skills use --agent: ${SUPPORTED_USE_AGENTS.join(', ')}`,
+    `Supported agents for better-skills use --agent: ${SUPPORTED_USE_AGENTS.join(', ')}`,
   ].join('\n');
 }
 

@@ -7,7 +7,7 @@
  *
  * This is critical because OpenCode uses xdg-basedir which always returns
  * ~/.config (or $XDG_CONFIG_HOME if set), regardless of platform.
- * The skills CLI must match this behavior to install skills in the correct location.
+ * The better-skills CLI must match this behavior to install skills in the correct location.
  *
  * See: https://github.com/vercel-labs/skills/pull/66
  * See: https://github.com/vercel-labs/skills/issues/63

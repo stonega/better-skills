@@ -217,7 +217,7 @@ describe('installer symlink regression', () => {
   });
 
   // Regression test for #1607: same claude-code exemption as installSkillForAgent,
-  // but for the blob install path (used by `skills add <owner>/<repo>`).
+  // but for the blob install path (used by `better-skills add <owner>/<repo>`).
   it('creates project-local Claude Code symlinks for blob installs when .claude does not exist', async () => {
     const root = await mkdtemp(join(tmpdir(), 'add-skill-'));
     const projectDir = join(root, 'project');

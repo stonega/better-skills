@@ -904,7 +904,7 @@ export function conflictsWithBackgroundUpdateCheck(
 
 export async function runTui(): Promise<void> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    console.error('skills panel requires an interactive terminal.');
+    console.error('better-skills panel requires an interactive terminal.');
     process.exitCode = 1;
     return;
   }

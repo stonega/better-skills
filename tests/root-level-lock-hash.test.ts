@@ -123,7 +123,7 @@ describe('root-level lock hash covers the whole directory (issue #1603)', () => 
     // Two repos that differ ONLY in a supporting file (scripts/check-deps.mjs).
     // SKILL.md and references/ are byte-identical. Before the fix, the lock hash used
     // computeSingleFileSkillHash(SKILL.md contents), so both repos hashed the same
-    // and `skills update` could never detect a script change. After the fix it uses
+    // and `better-skills update` could never detect a script change. After the fix it uses
     // computeSkillFolderHash(skill.path), which includes scripts/, so the two hashes
     // MUST differ.
     const fa = join(base, 'fa');
@@ -151,7 +151,7 @@ describe('root-level lock hash covers the whole directory (issue #1603)', () => 
     const hashB = await readLockHash(pb, 'myrootskill');
 
     // Core regression: the directory hash must change when a supporting file changes,
-    // otherwise `skills update` cannot detect upstream script updates.
+    // otherwise `better-skills update` cannot detect upstream script updates.
     expect(hashA).not.toBe(hashB);
   });
 });

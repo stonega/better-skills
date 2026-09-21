@@ -2,7 +2,7 @@
  * Unit tests for resolveSkillsToRemove in remove.ts
  *
  * Regression coverage for the "No matching skills found" bug during
- * `skills update`: lock keys can contain characters that sanitizeName()
+ * `better-skills update`: lock keys can contain characters that sanitizeName()
  * rewrites (e.g. the ':' in plugin skills like "ce:review", whose on-disk
  * folder is "ce-review"). Matching only against on-disk folder names then
  * fails, and stale lock entries whose folder is already gone can never be

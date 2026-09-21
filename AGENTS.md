@@ -1,25 +1,25 @@
 # AGENTS.md
 
-This file provides guidance to AI coding agents working on the `skills` CLI codebase.
+This file provides guidance to AI coding agents working on the `better-skills` CLI codebase.
 
 ## Project Overview
 
-`skills` is the CLI for the open agent skills ecosystem.
+`better-skills` is the CLI for the open agent skills ecosystem.
 
 ## Commands
 
-| Command                       | Description                                         |
-| ----------------------------- | --------------------------------------------------- |
-| `skills`                      | Show banner with available commands                 |
-| `skills add <pkg>`            | Install skills from git repos, URLs, or local paths |
-| `skills use <pkg>@<skill>`    | Use one skill without installing                    |
-| `skills experimental_install` | Restore skills from skills-lock.json                |
-| `skills experimental_sync`    | Sync skills from node_modules into agent dirs       |
-| `skills list`                 | List installed skills (alias: `ls`)                 |
-| `skills update [skills...]`   | Update skills to latest versions                    |
-| `skills init [name]`          | Create a new SKILL.md template                      |
+| Command                              | Description                                         |
+| ------------------------------------ | --------------------------------------------------- |
+| `better-skills`                      | Show banner with available commands                 |
+| `better-skills add <pkg>`            | Install skills from git repos, URLs, or local paths |
+| `better-skills use <pkg>@<skill>`    | Use one skill without installing                    |
+| `better-skills experimental_install` | Restore skills from skills-lock.json                |
+| `better-skills experimental_sync`    | Sync skills from node_modules into agent dirs       |
+| `better-skills list`                 | List installed skills (alias: `ls`)                 |
+| `better-skills update [skills...]`   | Update skills to latest versions                    |
+| `better-skills init [name]`          | Create a new SKILL.md template                      |
 
-Aliases: `skills a` works for `add`. `skills i`, `skills install` (no args) restore from `skills-lock.json`. `skills ls` works for `list`. `skills experimental_install` restores from `skills-lock.json`. `skills experimental_sync` crawls `node_modules` for skills.
+Aliases: `better-skills a` works for `add`. `better-skills i`, `better-skills install` (no args) restore from `skills-lock.json`. `better-skills ls` works for `list`. `better-skills experimental_install` restores from `skills-lock.json`. `better-skills experimental_sync` crawls `node_modules` for skills.
 
 ## Architecture
 
@@ -80,14 +80,14 @@ tests/
 
 ## Update Checking System
 
-### How `skills check` and `skills update` Work
+### How `better-skills check` and `better-skills update` Work
 
 1. Read `~/.agents/.skill-lock.json` for installed skills
 2. Filter to GitHub-backed skills that have both `skillFolderHash` and `skillPath`
 3. For each skill, call `fetchSkillFolderHash(source, skillPath, token)`. Tree requests start anonymously, then use an explicit `GITHUB_TOKEN`/`GH_TOKEN`, then `gh api` without exporting the GitHub CLI credential.
 4. `fetchSkillFolderHash` calls the GitHub Trees API (`/git/trees/<branch>?recursive=1` for `main`, then `master` fallback); update checks fall back to an authenticated Git clone when API access is unavailable.
 5. Compare latest folder tree SHA with lock file `skillFolderHash`; mismatch means update available
-6. `skills update` reinstalls changed skills by invoking the current CLI entrypoint directly (`node <repo>/bin/cli.mjs add <source-tree-url> -g -y`) to avoid nested npm exec/npx behavior
+6. `better-skills update` reinstalls changed skills by invoking the current CLI entrypoint directly (`node <repo>/bin/cli.mjs add <source-tree-url> -g -y`) to avoid nested npm exec/npx behavior
 
 ### Lock File Compatibility
 
@@ -97,12 +97,12 @@ If reading an older lock file version, it's wiped. Users must reinstall skills t
 
 ## Key Integration Points
 
-| Feature                    | Implementation                                                |
-| -------------------------- | ------------------------------------------------------------- |
-| `skills add`               | `src/add.ts` - full implementation                            |
-| `skills experimental_sync` | `src/sync.ts` - crawl node_modules                            |
-| `skills check`             | `src/cli.ts` + `fetchSkillFolderHash` in `src/skill-lock.ts`  |
-| `skills update`            | `src/cli.ts` direct hash compare + reinstall via `skills add` |
+| Feature                           | Implementation                                                       |
+| --------------------------------- | -------------------------------------------------------------------- |
+| `better-skills add`               | `src/add.ts` - full implementation                                   |
+| `better-skills experimental_sync` | `src/sync.ts` - crawl node_modules                                   |
+| `better-skills check`             | `src/cli.ts` + `fetchSkillFolderHash` in `src/skill-lock.ts`         |
+| `better-skills update`            | `src/cli.ts` direct hash compare + reinstall via `better-skills add` |
 
 ## Development
 

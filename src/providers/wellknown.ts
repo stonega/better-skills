@@ -65,7 +65,7 @@ export class WellKnownScopeNotFoundError extends Error {
     super(
       `No skills found for the scoped path '${scopePath}' on ${rootUrl}. ` +
         `Not falling back to the root skills index because that would install every skill the host publishes. ` +
-        `Check the URL, or run 'skills add ${rootUrl}' to install from the root index.`
+        `Check the URL, or run 'better-skills add ${rootUrl}' to install from the root index.`
     );
     this.name = 'WellKnownScopeNotFoundError';
     this.scopePath = scopePath;

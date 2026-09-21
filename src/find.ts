@@ -328,12 +328,12 @@ export async function runFind(args: string[]): Promise<void> {
   const owner = findOptions.owner;
   const isNonInteractive = !process.stdin.isTTY;
   const agentTip = `${DIM}Tip: if running in a coding agent, follow these steps:${RESET}
-${DIM}  1) npx skills find [query] [--owner <owner>]${RESET}
-${DIM}  2) npx skills add <owner/repo@skill>${RESET}`;
+${DIM}  1) npx @stonega/skills find [query] [--owner <owner>]${RESET}
+${DIM}  2) npx @stonega/skills add <owner/repo@skill>${RESET}`;
 
   if (errors.length > 0) {
     for (const error of errors) console.error(error);
-    console.error('Usage: npx skills find <query> [--owner <owner>]');
+    console.error('Usage: npx @stonega/skills find <query> [--owner <owner>]');
     return;
   }
 
@@ -354,7 +354,7 @@ ${DIM}  2) npx skills add <owner/repo@skill>${RESET}`;
       return;
     }
 
-    console.log(`${DIM}Install with${RESET} npx skills add <owner/repo@skill>`);
+    console.log(`${DIM}Install with${RESET} npx @stonega/skills add <owner/repo@skill>`);
     console.log();
 
     for (const skill of results) {
@@ -373,7 +373,7 @@ ${DIM}  2) npx skills add <owner/repo@skill>${RESET}`;
   if (isNonInteractive || (await isRunningInAgent())) {
     console.log(agentTip);
     console.log();
-    console.log(`${DIM}Usage: npx skills find <query> [--owner <owner>]${RESET}`);
+    console.log(`${DIM}Usage: npx @stonega/skills find <query> [--owner <owner>]${RESET}`);
     return;
   }
 
